@@ -141,18 +141,29 @@ function hashNumber(x: number, y: number, salt = 0) {
   return (value ^ (value >>> 16)) >>> 0;
 }
 
-export function oresForChunk(cx: number, cy: number) {
+export function oresForChunk(cx: number, cy: number, worldSeed = 0) {
   const tier = oreTierForChunk(cx, cy);
-  const count = cx === 0 && cy === 0 ? 2 : hashNumber(cx, cy, 11) % 3;
-  if (cx === 0 && cy === 0) {
-    return [
-      { x: 0, y: 7, tier },
-      { x: 7, y: 0, tier },
-    ];
+  if (cx === 0 && cy === 0) return [];
+
+  const besideStart = Math.abs(cx) + Math.abs(cy) === 1;
+  const countRoll = hashNumber(cx, cy, 11 ^ worldSeed);
+  const count = besideStart ? 1 + (countRoll % 2) : countRoll % 3;
+
+  if (besideStart) {
+    const alongEdge = hashNumber(cx, cy, 31 ^ worldSeed) % 8;
+    return Array.from({ length: count }, (_, index) => {
+      const offset = index === 0 ? alongEdge : (alongEdge + 4) % 8;
+      if (cx === 1) return { x: cx * CHUNK_SIZE, y: offset, tier };
+      if (cx === -1) return { x: cx * CHUNK_SIZE + 7, y: offset, tier };
+      if (cy === 1) return { x: offset, y: cy * CHUNK_SIZE, tier };
+      return { x: offset, y: cy * CHUNK_SIZE + 7, tier };
+    });
   }
+
+  const firstX = hashNumber(cx, cy, 31 ^ worldSeed) % 8;
   return Array.from({ length: count }, (_, index) => ({
-    x: cx * CHUNK_SIZE + (hashNumber(cx, cy, 31 + index) % 8),
-    y: cy * CHUNK_SIZE + (hashNumber(cx, cy, 71 + index) % 8),
+    x: cx * CHUNK_SIZE + (index === 0 ? firstX : (firstX + 4) % 8),
+    y: cy * CHUNK_SIZE + (hashNumber(cx, cy, (71 + index) ^ worldSeed) % 8),
     tier,
   }));
 }
