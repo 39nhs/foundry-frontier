@@ -91,21 +91,23 @@ export interface BuildingDefinition {
   cost: number;
   power: number;
   size: 3 | 5;
+  inputPorts: 3 | 6;
+  outputPorts: 3 | 6;
   description: string;
   glyph: string;
 }
 
 export const BUILDINGS: Record<BuildingType, BuildingDefinition> = {
-  core: { type: "core", name: "코어", category: "물류", cost: 0, power: 0, size: 5, description: "모든 자원과 전력을 관리합니다.", glyph: "◆" },
-  miner: { type: "miner", name: "채굴기", category: "채굴", cost: 20, power: 10, size: 3, description: "2·3티어 광맥을 1틱마다 채굴합니다.", glyph: "M" },
-  advancedMiner: { type: "advancedMiner", name: "고급 채굴기", category: "채굴", cost: 75, power: 25, size: 3, description: "모든 티어 광맥을 1틱마다 채굴합니다.", glyph: "A" },
-  outputter: { type: "outputter", name: "출력기", category: "물류", cost: 25, power: 25, size: 3, description: "코어의 지정 아이템을 벨트로 보냅니다.", glyph: "O" },
-  refinery: { type: "refinery", name: "정제기", category: "가공", cost: 10, power: 15, size: 3, description: "광물을 정제합니다.", glyph: "R" },
-  crusher: { type: "crusher", name: "분쇄기", category: "가공", cost: 10, power: 15, size: 3, description: "광물을 분쇄합니다.", glyph: "C" },
-  parts: { type: "parts", name: "부품 가공기", category: "가공", cost: 25, power: 15, size: 3, description: "가공된 광물을 부품으로 만듭니다.", glyph: "P" },
-  synthesizer: { type: "synthesizer", name: "합성기", category: "가공", cost: 100, power: 50, size: 3, description: "가공물과 부품으로 배터리를 만듭니다.", glyph: "S" },
-  generator: { type: "generator", name: "전기 생성기", category: "전력", cost: 125, power: 0, size: 3, description: "10틱마다 배터리를 전력으로 변환합니다.", glyph: "G" },
-  inputter: { type: "inputter", name: "입력기", category: "물류", cost: 50, power: 50, size: 3, description: "5틱마다 보관 아이템을 코어로 전송합니다.", glyph: "I" },
+  core: { type: "core", name: "코어", category: "물류", cost: 0, power: 0, size: 5, inputPorts: 6, outputPorts: 6, description: "모든 자원과 전력을 관리합니다.", glyph: "◆" },
+  miner: { type: "miner", name: "채굴기", category: "채굴", cost: 20, power: 10, size: 3, inputPorts: 3, outputPorts: 3, description: "2·3티어 광맥을 1틱마다 채굴합니다.", glyph: "M" },
+  advancedMiner: { type: "advancedMiner", name: "고급 채굴기", category: "채굴", cost: 75, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "모든 티어 광맥을 1틱마다 채굴합니다.", glyph: "A" },
+  outputter: { type: "outputter", name: "출력기", category: "물류", cost: 25, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "코어의 지정 아이템을 벨트로 보냅니다.", glyph: "O" },
+  refinery: { type: "refinery", name: "정제기", category: "가공", cost: 10, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "광물을 정제합니다.", glyph: "R" },
+  crusher: { type: "crusher", name: "분쇄기", category: "가공", cost: 10, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "광물을 분쇄합니다.", glyph: "C" },
+  parts: { type: "parts", name: "부품 가공기", category: "가공", cost: 25, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "가공된 광물을 부품으로 만듭니다.", glyph: "P" },
+  synthesizer: { type: "synthesizer", name: "합성기", category: "가공", cost: 100, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "가공물과 부품으로 배터리를 만듭니다.", glyph: "S" },
+  generator: { type: "generator", name: "전기 생성기", category: "전력", cost: 125, power: 0, size: 3, inputPorts: 3, outputPorts: 3, description: "10틱마다 배터리를 전력으로 변환합니다.", glyph: "G" },
+  inputter: { type: "inputter", name: "입력기", category: "물류", cost: 50, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "5틱마다 보관 아이템을 코어로 전송합니다.", glyph: "I" },
 };
 
 export const DIRECTIONS: Record<Direction, { x: number; y: number; arrow: string }> = {
@@ -142,9 +144,15 @@ function hashNumber(x: number, y: number, salt = 0) {
 export function oresForChunk(cx: number, cy: number) {
   const tier = oreTierForChunk(cx, cy);
   const count = cx === 0 && cy === 0 ? 2 : hashNumber(cx, cy, 11) % 3;
+  if (cx === 0 && cy === 0) {
+    return [
+      { x: 0, y: 7, tier },
+      { x: 7, y: 0, tier },
+    ];
+  }
   return Array.from({ length: count }, (_, index) => ({
-    x: cx * CHUNK_SIZE + 1 + (hashNumber(cx, cy, 31 + index) % 8),
-    y: cy * CHUNK_SIZE + 1 + (hashNumber(cx, cy, 71 + index) % 8),
+    x: cx * CHUNK_SIZE + (hashNumber(cx, cy, 31 + index) % 8),
+    y: cy * CHUNK_SIZE + (hashNumber(cx, cy, 71 + index) % 8),
     tier,
   }));
 }
