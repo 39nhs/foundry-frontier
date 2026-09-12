@@ -206,7 +206,8 @@ export function oresForChunk(cx: number, cy: number, worldSeed = 0) {
 
   const besideStart = Math.abs(cx) + Math.abs(cy) === 1;
   const countRoll = hashNumber(cx, cy, 11 ^ worldSeed);
-  const count = besideStart ? 1 + (countRoll % 2) : countRoll % 3;
+  const countPercent = countRoll % 100;
+  const count = besideStart ? 1 + (countRoll % 2) : countPercent < 40 ? 0 : countPercent < 85 ? 1 : 2;
 
   if (besideStart) {
     const alongEdge = hashNumber(cx, cy, 31 ^ worldSeed) % ORE_ANCHOR_RANGE;
