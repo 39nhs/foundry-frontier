@@ -78,6 +78,7 @@ button { color: inherit; }
 .world { position: absolute; inset: 0; overflow: hidden; cursor: grab; background: #111516; user-select: none; touch-action: none; overscroll-behavior: none; }
 .world.mode-build { cursor: crosshair; }
 .world.mode-belt { cursor: cell; }
+.world.mode-belt-erase { cursor: not-allowed; }
 .world:active { cursor: grabbing; }
 .terrain { position: absolute; inset: -50%; background-image: linear-gradient(#07101238, #07101238), url("/assets/terrain-tile.png"); background-size: 640px 640px; filter: saturate(.78) brightness(.68); }
 .tile { position: absolute; border: 1px solid #81909417; background: #111a1c0d; padding: 0; overflow: visible; z-index: 1; }
@@ -232,13 +233,19 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; min-height: 20
 .quantity-row input { flex: 1; }
 .market-actions { margin-top: 10px; }
 .market-actions button { flex: 1; }
+.manual-transfer { display: grid; gap: 8px; margin-top: 14px; padding: 10px; background: #10191a; border: 1px solid #355153; }
+.manual-transfer h3 { margin: 0; color: #75dcd5; font: 11px var(--font-mono); letter-spacing: .06em; }
+.manual-transfer select { width: 100%; min-height: 34px; padding: 0 8px; color: #edf5f4; background: #0a1011; border: 1px solid #3a4b4e; }
+.manual-transfer > div { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 6px; }
 .inventory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
 .inventory-list { margin-top: 14px; padding: 10px; background: #0b1011; border: 1px solid #2d393b; }
 .inventory-list p { margin: 12px 0; color: #627073; font-size: 11px; }
 .inventory-list > div { display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: center; margin-top: 7px; font-size: 10px; }
 .inventory-list > div.returnable { grid-template-columns: 24px minmax(0, 1fr) auto; }
 .inventory-list > div.returnable > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.inventory-list > div.returnable > button { grid-column: 1 / -1; width: 100%; height: 25px; color: #9edbd6; border: 1px solid #30494a; font-size: 10px; }
+.return-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.inventory-list > div.returnable > .return-actions { overflow: visible; }
+.return-actions button { height: 25px; padding: 0 4px; color: #9edbd6; border: 1px solid #30494a; font-size: 10px; }
 .inventory-list i.item-sprite { width: 24px; height: 24px; filter: drop-shadow(0 2px 3px #000b); }
 .inventory-list [data-slot="progress"] { grid-column: 1 / -1; height: 3px; }
 .inspector-actions { display: flex; gap: 8px; margin-top: 18px; }
