@@ -396,9 +396,7 @@ export default function Home() {
   };
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (game.phase !== "PLAYING" || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
-    event.preventDefault();
     const tile = pointerTile(event.target);
-    event.currentTarget.setPointerCapture(event.pointerId);
     const drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, cameraX: camera.x, cameraY: camera.y, moved: false, timer: null as number | null, tileX: tile?.x, tileY: tile?.y };
     if (tile && event.pointerType !== "mouse") drag.timer = window.setTimeout(() => { suppressClickUntilRef.current = event.timeStamp + 1250; drag.moved = true; openContextAt(tile.x, tile.y); }, 550);
     pointerDragRef.current = drag;
@@ -406,10 +404,13 @@ export default function Home() {
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = pointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    event.preventDefault();
     const dx = event.clientX - drag.startX; const dy = event.clientY - drag.startY;
-    if (Math.hypot(dx, dy) > 8) { drag.moved = true; if (drag.timer !== null) { window.clearTimeout(drag.timer); drag.timer = null; } }
-    if (drag.moved) { suppressClickUntilRef.current = event.timeStamp + 250; setCamera({ x: drag.cameraX - dx / zoom, y: drag.cameraY - dy / zoom }); }
+    if (Math.hypot(dx, dy) > 8 && !drag.moved) {
+      drag.moved = true;
+      if (drag.timer !== null) { window.clearTimeout(drag.timer); drag.timer = null; }
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    if (drag.moved) { event.preventDefault(); suppressClickUntilRef.current = event.timeStamp + 250; setCamera({ x: drag.cameraX - dx / zoom, y: drag.cameraY - dy / zoom }); }
   };
   const finishPointer = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = pointerDragRef.current;
