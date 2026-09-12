@@ -159,7 +159,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDefinition> = {
   crusher: { type: "crusher", name: "분쇄기", category: "가공", cost: 10, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "광물을 분쇄합니다.", glyph: "C" },
   parts: { type: "parts", name: "부품 가공기", category: "가공", cost: 25, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "가공된 광물을 부품으로 만듭니다.", glyph: "P" },
   synthesizer: { type: "synthesizer", name: "합성기", category: "가공", cost: 100, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "가공물과 부품으로 배터리를 만듭니다.", glyph: "S" },
-  generator: { type: "generator", name: "전기 생성기", category: "전력", cost: 125, power: 0, size: 3, inputPorts: 3, outputPorts: 3, description: "10틱마다 배터리를 전력으로 변환합니다.", glyph: "G" },
+  generator: { type: "generator", name: "전기 생성기", category: "전력", cost: 125, power: 0, size: 3, inputPorts: 3, outputPorts: 3, description: "5틱마다 배터리를 전력으로 변환합니다.", glyph: "G" },
   inputter: { type: "inputter", name: "입력기", category: "물류", cost: 50, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "5틱마다 보관 아이템을 코어로 전송합니다.", glyph: "I" },
   seedExtractor: { type: "seedExtractor", name: "채종기", category: "재배", cost: 35, power: 10, size: 3, inputPorts: 3, outputPorts: 3, description: "식물 1개에서 씨앗 2개를 분리합니다.", glyph: "D" },
   cultivator: { type: "cultivator", name: "재배기", category: "재배", cost: 45, power: 20, size: 3, inputPorts: 3, outputPorts: 3, description: "씨앗을 3틱 동안 길러 식물로 만듭니다.", glyph: "V" },
@@ -176,12 +176,23 @@ export const SELLABLE_IDS = (Object.keys(ALL_ITEMS).map(Number) as AnyItemId[])
 
 export const CHUNK_SIZE = 15;
 export const MAP_RADIUS_CHUNKS = 15;
+export const TOTAL_CHUNKS = (MAP_RADIUS_CHUNKS * 2 + 1) ** 2;
 export const TICK_MS = 2000;
 export const BUFFER_LIMIT = 50;
+export const POWER_SETTLEMENT_TICKS = 5;
+export const BASE_POWER_PRODUCTION = 200;
 const ORE_SIZE = 3;
 const ORE_ANCHOR_RANGE = CHUNK_SIZE - ORE_SIZE + 1;
 const SECOND_ORE_OFFSET = Math.floor(ORE_ANCHOR_RANGE / 2);
 const WILD_PLANT_BY_TIER = { 1: 711, 2: 712, 3: 713 } as const;
+
+export function shouldSettlePower(tick: number) {
+  return tick > 0 && tick % POWER_SETTLEMENT_TICKS === 0;
+}
+
+export function isMapComplete(unlockedCount: number) {
+  return unlockedCount >= TOTAL_CHUNKS;
+}
 
 export function chunkPrice(purchases: number) {
   const n = purchases + 1;

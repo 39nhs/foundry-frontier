@@ -274,6 +274,10 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; min-height: 20
 .state-summary { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; }
 .state-summary span { min-width: 130px; padding: 11px 13px; border: 1px solid #344649; background: #080d0eb8; color: #9dafb1; font-size: 13px; }
 .state-summary strong { display: block; margin-top: 3px; color: #f0b24d; font: 700 17px var(--font-mono); }
+.victory-overlay { background: radial-gradient(circle at 50% 42%, #3f3513c7, #070806f4 68%); }
+.victory-overlay .state-card { border-color: #d9b84f; }
+.victory-overlay .state-card > small { color: #f0cb61; }
+.victory-overlay .state-card h1 { color: #fff0a8; }
 .game-over-overlay { background: radial-gradient(circle at 50% 42%, #441d18c7, #070606f4 68%); }
 .game-over-overlay .state-card { border-color: #a54d3f; }
 .game-over-overlay .state-card > small { color: #ef7c69; }
