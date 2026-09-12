@@ -507,7 +507,7 @@ export default function Home() {
     const rightMouse = event.pointerType === "mouse" && event.button === 2;
     if (pendingBeltPlan || pendingBeltRemoval || game.phase !== "PLAYING" || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0 && !(beltMode && rightMouse))) return;
     const portStart = beltMode ? pointerPortStart(event.target) : undefined;
-    const tile = pointerTileAt(event.clientX, event.clientY) ?? pointerTile(event.target);
+    const tile = pointerTile(event.target) ?? pointerTileAt(event.clientX, event.clientY);
     if (beltMode && tile && (beltEraseMode || rightMouse)) {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
