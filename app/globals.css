@@ -93,6 +93,7 @@ button { color: inherit; }
 .ore-1 { color: #ffd166; background-position: 0 0; }
 .ore-2 { color: #62e0d5; background-position: 50% 0; }
 .ore-3 { color: #b2beca; background-position: 100% 0; }
+.wild-plant { position: absolute; z-index: 5; inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); background-repeat: no-repeat; background-size: contain !important; background-position: center !important; filter: drop-shadow(0 2px 4px #000c) drop-shadow(0 0 5px #9ee7a277); pointer-events: none; }
 .chunk-survey { position: absolute; z-index: 7; left: 50%; top: 50%; transform: translate(-50%, -50%); min-width: 88px; display: grid; gap: 1px; padding: 6px 8px; border: 1px solid currentColor; background: #071011ed; box-shadow: 0 7px 18px #000d; pointer-events: none; white-space: nowrap; }
 .chunk-survey b { font: 800 11px var(--font-mono); }
 .chunk-survey small { color: #c0cccd; font: 10px var(--font-mono); }
