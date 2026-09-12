@@ -9,7 +9,7 @@ export type ItemId =
   | 711 | 712 | 713
   | 721 | 722 | 723
   | 801 | 802 | 803 | 804
-  | 901 | 902 | 903;
+  | 901 | 902 | 903 | 904 | 905;
 
 export type BuildingType =
   | "core" | "miner" | "advancedMiner" | "outputter"
@@ -59,6 +59,8 @@ export const ITEMS: Partial<Record<ItemId, ItemDefinition>> = {
   901: { id: 901, name: "산업 폭약", short: "산업 폭약", color: "#e27c45", sellPrice: 320 },
   902: { id: 902, name: "회로 코팅제", short: "회로 코팅", color: "#4fcfc0", sellPrice: 380 },
   903: { id: 903, name: "복합 장갑판", short: "복합 장갑", color: "#aab2a5", sellPrice: 450 },
+  904: { id: 904, name: "정밀 기어", short: "정밀 기어", color: "#d6a55f" },
+  905: { id: 905, name: "열제어 모듈", short: "열제어 모듈", color: "#73d7cb", sellPrice: 650 },
 };
 
 // 배터리는 판매와 발전 양쪽에 쓰이므로 별도 번호 대역으로 관리합니다.
@@ -124,12 +126,14 @@ export const RECIPES: Record<BuildingType, Recipe[]> = {
     { id: "industrial-explosive", name: "산업 폭약", inputs: { 721: 1, 301: 1 }, output: 901, amount: 1, durationTicks: 2 },
     { id: "circuit-coating", name: "회로 코팅제", inputs: { 803: 1, 502: 1 }, output: 902, amount: 1, durationTicks: 2 },
     { id: "composite-plating", name: "복합 장갑판", inputs: { 804: 1, 503: 1 }, output: 903, amount: 1, durationTicks: 2 },
+    { id: "precision-gear", name: "정밀 기어", inputs: { 201: 1, 302: 1 }, output: 904, amount: 1, durationTicks: 2 },
   ],
   synthesizer: [
     { id: "battery-1", name: "1티어 배터리", inputs: { 401: 1, 501: 1 }, output: 601, amount: 1 },
     { id: "battery-2", name: "2티어 배터리", inputs: { 202: 1, 502: 1 }, output: 602, amount: 1 },
     { id: "battery-3", name: "3티어 배터리", inputs: { 403: 1, 503: 1 }, output: 603, amount: 1 },
     { id: "battery-bio", name: "바이오 하이브리드 전지", inputs: { 801: 1, 802: 1, 901: 1 }, output: 604, amount: 1, durationTicks: 3 },
+    { id: "thermal-control-module", name: "열제어 모듈", inputs: { 904: 1, 402: 1, 803: 1 }, output: 905, amount: 1, durationTicks: 3 },
   ],
 };
 
