@@ -190,6 +190,16 @@ export function shouldSettlePower(tick: number) {
   return tick > 0 && tick % POWER_SETTLEMENT_TICKS === 0;
 }
 
+export function orthogonalTilePath(from: { x: number; y: number }, to: { x: number; y: number }) {
+  const path: { x: number; y: number }[] = [];
+  let { x, y } = from;
+  const moveX = () => { while (x !== to.x) { x += Math.sign(to.x - x); path.push({ x, y }); } };
+  const moveY = () => { while (y !== to.y) { y += Math.sign(to.y - y); path.push({ x, y }); } };
+  if (Math.abs(to.x - x) >= Math.abs(to.y - y)) { moveX(); moveY(); }
+  else { moveY(); moveX(); }
+  return path;
+}
+
 export function isMapComplete(unlockedCount: number) {
   return unlockedCount >= TOTAL_CHUNKS;
 }

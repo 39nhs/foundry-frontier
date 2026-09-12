@@ -5,7 +5,7 @@ import { Box, Coins, Factory, Gauge, Hammer, HelpCircle, Map, Move, Power, Rotat
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { ALL_ITEMS, BASE_POWER_PRODUCTION, BUFFER_LIMIT, BUILDINGS, BuildingType, CHUNK_SIZE, Direction, DIRECTIONS, MAP_RADIUS_CHUNKS, POWER_SETTLEMENT_TICKS, RECIPES, SELLABLE_IDS, TICK_MS, TOTAL_CHUNKS, AnyItemId, Recipe, chunkPrice, isMapComplete, oresForChunk, plantsForChunk, shouldSettlePower } from "./game-data";
+import { ALL_ITEMS, BASE_POWER_PRODUCTION, BUFFER_LIMIT, BUILDINGS, BuildingType, CHUNK_SIZE, Direction, DIRECTIONS, MAP_RADIUS_CHUNKS, POWER_SETTLEMENT_TICKS, RECIPES, SELLABLE_IDS, TICK_MS, TOTAL_CHUNKS, AnyItemId, Recipe, chunkPrice, isMapComplete, oresForChunk, orthogonalTilePath, plantsForChunk, shouldSettlePower } from "./game-data";
 
 type Inventory = Partial<Record<AnyItemId, number>>;
 type GamePhase = "READY" | "PLAYING" | "VICTORY" | "COMPLETED" | "GAME_OVER";
@@ -288,6 +288,7 @@ export default function Home() {
   const enterSequenceRef = useRef<number[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null); const musicRef = useRef<HTMLAudioElement | null>(null); const assetSoundsRef = useRef<{ place: HTMLAudioElement; remove: HTMLAudioElement } | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; cameraX: number; cameraY: number; moved: boolean; timer: number | null; tileX?: number; tileY?: number } | null>(null);
+  const beltPaintRef = useRef<{ pointerId: number; lastX: number; lastY: number; placed: Set<string> } | null>(null);
   const suppressClickUntilRef = useRef(0);
 
   const stopAmbientSound = useCallback(() => { musicRef.current?.pause(); }, []);
@@ -365,11 +366,33 @@ export default function Home() {
     return { x, y, snapped: false };
   };
 
+  const canPaintBeltAt = (x: number, y: number) => {
+    const cx = Math.floor(x / CHUNK_SIZE); const cy = Math.floor(y / CHUNK_SIZE);
+    return unlocked.has(chunkKey(cx, cy)) && !buildingAt(game.buildings, x, y) && !availableWildPlantAt(x, y);
+  };
+  const placeBeltAt = (rawX: number, rawY: number, outgoingDirection: Direction = beltDirection) => {
+    setGame((state) => {
+      const cx = Math.floor(rawX / CHUNK_SIZE); const cy = Math.floor(rawY / CHUNK_SIZE);
+      const plant = wildPlantAt(rawX, rawY, state.worldSeed);
+      if (!state.unlockedChunks.includes(chunkKey(cx, cy)) || buildingAt(state.buildings, rawX, rawY) || (plant && !state.harvestedPlants.includes(wildPlantKey(plant)))) return state;
+      const replaced = state.belts.find((belt) => belt.x === rawX && belt.y === rawY);
+      const belts = state.belts.filter((belt) => belt.x !== rawX || belt.y !== rawY);
+      const previous = replaced ? undefined : [...belts].reverse().find((belt) => directionBetween(belt, { x: rawX, y: rawY }));
+      const connectionDirection = beltKind === "normal" && previous && beltKindOf(previous) === "normal" ? directionBetween(previous, { x: rawX, y: rawY }) : undefined;
+      const connectedBelts = connectionDirection ? belts.map((belt) => belt === previous ? { ...belt, direction: connectionDirection } : belt) : belts;
+      const core = { ...state.core };
+      if (replaced?.item) addItem(core, replaced.item, 1);
+      if (replaced?.secondaryItem) addItem(core, replaced.secondaryItem, 1);
+      const direction = beltKind === "normal" ? outgoingDirection : beltDirection;
+      return { ...state, core, belts: [...connectedBelts, { x: rawX, y: rawY, direction, kind: beltKind, splitIndex: 0 }], message: connectionDirection ? `벨트 자동 연결 ${DIRECTIONS[connectionDirection].arrow}` : `${BELT_KIND_LABEL[beltKind]} 벨트 ${DIRECTIONS[direction].arrow} 설치` };
+    });
+  };
+
   const handleTileClick = (rawX: number, rawY: number, eventTime: number) => {
     if (eventTime < suppressClickUntilRef.current || game.phase !== "PLAYING") return;
     const cx = Math.floor(rawX / CHUNK_SIZE); const cy = Math.floor(rawY / CHUNK_SIZE);
     if (!unlocked.has(chunkKey(cx, cy))) { if (Math.max(Math.abs(cx), Math.abs(cy)) <= MAP_RADIUS_CHUNKS && isAdjacentChunk(cx, cy)) setPendingChunk({ x: cx, y: cy }); return; }
-    if (beltMode) { if (buildingAt(game.buildings, rawX, rawY) || availableWildPlantAt(rawX, rawY)) return; playSound("belt"); setGame((state) => { const replaced = state.belts.find((belt) => belt.x === rawX && belt.y === rawY); const belts = state.belts.filter((belt) => belt.x !== rawX || belt.y !== rawY); const previous = replaced ? undefined : belts.at(-1); const turnDirection = beltKind === "normal" && previous && beltKindOf(previous) === "normal" ? directionBetween(previous, { x: rawX, y: rawY }) : undefined; const connectedBelts = turnDirection ? belts.map((belt) => belt === previous ? { ...belt, direction: turnDirection } : belt) : belts; const core = { ...state.core }; if (replaced?.item) addItem(core, replaced.item, 1); if (replaced?.secondaryItem) addItem(core, replaced.secondaryItem, 1); return { ...state, core, belts: [...connectedBelts, { x: rawX, y: rawY, direction: beltDirection, kind: beltKind, splitIndex: 0 }], message: turnDirection ? `벨트 자동 연결 ${DIRECTIONS[turnDirection].arrow}` : `${BELT_KIND_LABEL[beltKind]} 벨트 ${DIRECTIONS[beltDirection].arrow} 설치` }; }); return; }
+    if (beltMode) { if (!canPaintBeltAt(rawX, rawY)) return; playSound("belt"); placeBeltAt(rawX, rawY); return; }
     const buildingType = movingId ? game.buildings.find((b) => b.id === movingId)?.type : selectedBuilding;
     if (!buildingType || buildingType === "core") return;
     const target = placementTarget(buildingType, rawX, rawY); const { x, y } = target;
@@ -394,14 +417,48 @@ export default function Home() {
     if (!element) return undefined;
     return { x: Number(element.dataset.tileX), y: Number(element.dataset.tileY) };
   };
+  const pointerTileAt = (clientX: number, clientY: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return undefined;
+    const rect = viewport.getBoundingClientRect();
+    return {
+      x: Math.floor((camera.x + (clientX - rect.left - rect.width / 2) / zoom) / TILE),
+      y: Math.floor((camera.y + (clientY - rect.top - rect.height / 2) / zoom) / TILE),
+    };
+  };
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (game.phase !== "PLAYING" || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
-    const tile = pointerTile(event.target);
+    const tile = pointerTile(event.target) ?? pointerTileAt(event.clientX, event.clientY);
+    if (beltMode && tile && canPaintBeltAt(tile.x, tile.y)) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      beltPaintRef.current = { pointerId: event.pointerId, lastX: tile.x, lastY: tile.y, placed: new Set([tileKey(tile.x, tile.y)]) };
+      suppressClickUntilRef.current = event.timeStamp + 500;
+      playSound("belt");
+      placeBeltAt(tile.x, tile.y);
+      return;
+    }
     const drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, cameraX: camera.x, cameraY: camera.y, moved: false, timer: null as number | null, tileX: tile?.x, tileY: tile?.y };
     if (tile && event.pointerType !== "mouse") drag.timer = window.setTimeout(() => { suppressClickUntilRef.current = event.timeStamp + 1250; drag.moved = true; openContextAt(tile.x, tile.y); }, 550);
     pointerDragRef.current = drag;
   };
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const beltPaint = beltPaintRef.current;
+    if (beltPaint?.pointerId === event.pointerId) {
+      event.preventDefault();
+      const tile = pointerTileAt(event.clientX, event.clientY);
+      if (!tile || (tile.x === beltPaint.lastX && tile.y === beltPaint.lastY)) return;
+      let previous = { x: beltPaint.lastX, y: beltPaint.lastY };
+      for (const next of orthogonalTilePath(previous, tile)) {
+        const key = tileKey(next.x, next.y);
+        const direction = directionBetween(previous, next) ?? beltDirection;
+        if (!beltPaint.placed.has(key) && canPaintBeltAt(next.x, next.y)) { placeBeltAt(next.x, next.y, direction); beltPaint.placed.add(key); }
+        previous = next;
+      }
+      beltPaint.lastX = tile.x; beltPaint.lastY = tile.y;
+      suppressClickUntilRef.current = event.timeStamp + 350;
+      return;
+    }
     const drag = pointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.startX; const dy = event.clientY - drag.startY;
@@ -413,6 +470,13 @@ export default function Home() {
     if (drag.moved) { event.preventDefault(); suppressClickUntilRef.current = event.timeStamp + 250; setCamera({ x: drag.cameraX - dx / zoom, y: drag.cameraY - dy / zoom }); }
   };
   const finishPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const beltPaint = beltPaintRef.current;
+    if (beltPaint?.pointerId === event.pointerId) {
+      suppressClickUntilRef.current = event.timeStamp + 350;
+      beltPaintRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      return;
+    }
     const drag = pointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (drag.timer !== null) window.clearTimeout(drag.timer);
@@ -474,7 +538,7 @@ export default function Home() {
       {selected && <aside className="panel inspector"><PanelHead eyebrow="설비 관리" title={BUILDINGS[selected.type].name} close={() => setSelectedId(null)} /><div className="power-state"><Power /><span><strong>{selected.active ? "정상 가동" : "가동 중지"}</strong><small>작동 시 2초당 {BUILDINGS[selected.type].power} 전력</small></span></div>{RECIPES[selected.type].length > 0 && <label className="field-label">제작법<select value={selected.recipeId} onChange={(e) => changeRecipe(e.target.value)}>{RECIPES[selected.type].map((r) => <option value={r.id} key={r.id}>{r.name}</option>)}</select></label>}{selectedRecipe && <section className="selected-recipe"><small>현재 조합법</small><RecipeFormula recipe={selectedRecipe} /></section>}{selected.type === "outputter" && <label className="field-label">출력 아이템<select value={selected.selectedOutput ?? 103} onChange={(e) => updateBuilding({ selectedOutput: Number(e.target.value) as AnyItemId })}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}{selected.type === "core" && <section className="core-output-settings"><h3>출력 포트별 아이템</h3>{["우측 상단", "우측 위", "우측 중앙", "우측 아래", "우측 하단", "하단 중앙"].map((label, index) => <label key={label}><span>{index + 1}. {label}</span><select value={selected.outputSelections?.[index] ?? 103} onChange={(event) => updateCoreOutput(index, Number(event.target.value) as AnyItemId)}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>)}</section>}<div className="inventory-grid"><InventoryList title={`입력 보관 · ${inputSlotLimit(selected) === Infinity ? "무제한" : `${inputSlotLimit(selected)}종`}`} inventory={selected.input} onReturn={selected.type === "core" ? undefined : (item) => returnInventoryItem("input", item)} /><InventoryList title="출력 보관 · 1종" inventory={selected.output} onReturn={selected.type === "core" ? undefined : (item) => returnInventoryItem("output", item)} /></div>{selected.type === "core" && <InventoryList title="코어 통합 보관함" inventory={game.core} />}{selected.type !== "core" && <div className="inspector-actions"><Button variant="outline" onClick={beginMove}><Move /> 이동</Button><Button variant="destructive" onClick={removeBuilding}><Trash2 /> 철거</Button></div>}</aside>}
       {marketOpen && <aside className="panel market-panel"><PanelHead eyebrow="광구 거래소" title="판매 스테이지" close={() => setMarketOpen(false)} /><label className="field-label">판매 아이템<select value={saleItem} onChange={(e) => setSaleItem(Number(e.target.value) as AnyItemId)}>{SELLABLE_IDS.map((id) => <option value={id} key={id}>{ALL_ITEMS[id].name} · 보유 {inventoryCount(game.core, id)}개 · {ALL_ITEMS[id].sellPrice} G</option>)}</select></label><div className="stock-line"><span>현재 보유량</span><strong>{inventoryCount(game.core, saleItem).toLocaleString()}개</strong></div><label className="field-label">수량<div className="quantity-row"><Input min={1} step={1} type="number" value={saleQuantity} onChange={(e) => setSaleQuantity(e.target.value === "" ? "" : Number(e.target.value))} /><Button variant="outline" onClick={selectAllCurrent}>전량 선택</Button></div></label><div className="market-actions"><Button onClick={stageSale}>선택 수량 올리기</Button><Button variant="outline" onClick={stageAllSellable}>전체 재고 올리기</Button></div><div className="sale-stage">{game.stagedSales.length === 0 ? <p>판매할 아이템을 선택해 주세요.</p> : game.stagedSales.map((line, index) => <div key={`${line.item}-${index}`}><span>{ALL_ITEMS[line.item].name}</span><strong>{line.quantity}개</strong><em>{((ALL_ITEMS[line.item].sellPrice ?? 0) * line.quantity).toLocaleString()} G</em></div>)}</div><div className="sale-total"><span>예상 수익</span><strong>{totalStaged.toLocaleString()} G</strong></div><Button disabled={!game.stagedSales.length} onClick={confirmSale} className="w-full sell-button"><Coins /> 판매 확정</Button></aside>}
       {pendingChunk && <aside className="chunk-dialog"><small>미개척 구역</small><h2>청크 [{pendingChunk.x}, {pendingChunk.y}]</h2><p>새 광맥과 건설 공간을 조사합니다. 인접 청크만 해금할 수 있습니다.</p><strong>{chunkPrice(game.unlockedChunks.length - 1).toLocaleString()} GOLD</strong><div><Button variant="outline" onClick={() => setPendingChunk(null)}>취소</Button><Button onClick={buyChunk}>구역 해금</Button></div></aside>}
-      {helpOpen && <aside className="help-dialog"><PanelHead eyebrow="운영 매뉴얼" title="조작 방법" close={() => setHelpOpen(false)} /><div className="help-grid"><kbd>W A S D</kbd><span>카메라 이동</span><kbd>마우스 드래그</kbd><span>왼쪽 버튼으로 지도 이동</span><kbd>좌클릭</kbd><span>설치 및 결정</span><kbd>우클릭</kbd><span>설비 관리 / 광맥 채굴 / 야생 식물 채집</span><kbd>Q / E / Space</kbd><span>건물 / 벨트 / 판매소</span><kbd>연속 클릭</kbd><span>일반 벨트 직선·ㄱ자 자동 연결</span><kbd>F</kbd><span>일반 / 교차 / 분배 / 합류 벨트 변경</span><kbd>R</kbd><span>다음 벨트 출력 방향 회전</span><kbd>휠</kbd><span>지도 확대·축소</span><kbd>터치</kbd><span>한 손가락 드래그 이동 / 길게 눌러 관리·채굴·채집</span></div><p>교차 벨트는 표시 방향과 시계 방향의 두 흐름을 독립 운송합니다. 분배 벨트는 표시 방향과 시계 방향 출구를 번갈아 사용하고, 합류 벨트는 여러 입력을 표시 방향 하나로 보냅니다.</p></aside>}
+      {helpOpen && <aside className="help-dialog"><PanelHead eyebrow="운영 매뉴얼" title="조작 방법" close={() => setHelpOpen(false)} /><div className="help-grid"><kbd>W A S D</kbd><span>카메라 이동</span><kbd>마우스 드래그</kbd><span>왼쪽 버튼으로 지도 이동</span><kbd>좌클릭</kbd><span>설치 및 결정</span><kbd>우클릭</kbd><span>설비 관리 / 광맥 채굴 / 야생 식물 채집</span><kbd>Q / E / Space</kbd><span>건물 / 벨트 / 판매소</span><kbd>벨트 드래그</kbd><span>지나간 칸에 연속 설치 · 직선과 ㄱ자 자동 연결</span><kbd>F</kbd><span>일반 / 교차 / 분배 / 합류 벨트 변경</span><kbd>R</kbd><span>다음 벨트 출력 방향 회전</span><kbd>휠</kbd><span>지도 확대·축소</span><kbd>터치</kbd><span>한 손가락 드래그 이동 / 길게 눌러 관리·채굴·채집</span></div><p>벨트 모드에서는 드래그로 연속 설치합니다. 교차 벨트는 표시 방향과 시계 방향의 두 흐름을 독립 운송하며, 분배 벨트는 두 출구를 번갈아 사용하고 합류 벨트는 여러 입력을 한 방향으로 보냅니다.</p></aside>}
       {commandOpen && <aside className="command-console" role="dialog" aria-modal="true" aria-label="커맨드 입력"><form onSubmit={submitCommand}><PanelHead eyebrow="FOUNDRY SYSTEM" title="커맨드 입력" close={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }} /><p><code>give 숫자</code>는 골드를, <code>give all</code>은 모든 재료를 추가합니다.</p><label className="field-label" htmlFor="command-code">COMMAND CODE<Input id="command-code" autoFocus autoComplete="off" spellCheck={false} value={commandInput} onChange={(event) => { setCommandInput(event.target.value); setCommandFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); executeCommand(); } else if (event.key === "Escape") { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); } }} placeholder="give 1000 / give all" /></label>{commandFeedback && <p className="command-feedback" role="alert">{commandFeedback}</p>}<div className="command-actions"><Button type="button" variant="outline" onClick={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }}>취소</Button><Button type="button" onClick={executeCommand}>실행</Button></div></form></aside>}
     </section>
   </main>;

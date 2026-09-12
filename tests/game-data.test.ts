@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 // Node 22는 테스트 실행 시 TypeScript 확장자를 직접 제거해 처리합니다.
 // @ts-expect-error 실행기에는 .ts 확장자가 필요하며 애플리케이션 빌드는 이를 번들링합니다.
-import { ALL_ITEMS, POWER_SETTLEMENT_TICKS, RECIPES, SELLABLE_IDS, TOTAL_CHUNKS, chunkPrice, isMapComplete, oresForChunk, plantsForChunk, shouldSettlePower } from "../app/game-data.ts";
+import { ALL_ITEMS, POWER_SETTLEMENT_TICKS, RECIPES, SELLABLE_IDS, TOTAL_CHUNKS, chunkPrice, isMapComplete, oresForChunk, orthogonalTilePath, plantsForChunk, shouldSettlePower } from "../app/game-data.ts";
 
 test("시작·인접·일반 청크의 광맥 생성 규칙", () => {
   for (let seed = 0; seed < 500; seed += 1) {
@@ -61,4 +61,17 @@ test("31×31 청크를 모두 열면 맵 개척 완료", () => {
   assert.equal(TOTAL_CHUNKS, 961);
   assert.equal(isMapComplete(960), false);
   assert.equal(isMapComplete(961), true);
+});
+
+test("벨트 드래그 경로는 모든 칸을 직교 방향으로 연결", () => {
+  const path = orthogonalTilePath({ x: 1, y: 1 }, { x: 4, y: 3 });
+  assert.deepEqual(path, [
+    { x: 2, y: 1 }, { x: 3, y: 1 }, { x: 4, y: 1 },
+    { x: 4, y: 2 }, { x: 4, y: 3 },
+  ]);
+  let previous = { x: 1, y: 1 };
+  for (const tile of path) {
+    assert.equal(Math.abs(tile.x - previous.x) + Math.abs(tile.y - previous.y), 1);
+    previous = tile;
+  }
 });
