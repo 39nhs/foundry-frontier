@@ -485,6 +485,15 @@ export default function Home() {
     if (!element) return undefined;
     return { x: Number(element.dataset.tileX), y: Number(element.dataset.tileY) };
   };
+  const pointerPortStart = (target: EventTarget | null) => {
+    const element = target instanceof HTMLElement ? target.closest<HTMLElement>("[data-belt-port-x][data-belt-port-y]") : null;
+    if (!element) return undefined;
+    return {
+      tile: { x: Number(element.dataset.beltPortX), y: Number(element.dataset.beltPortY) },
+      reverse: element.dataset.beltPortReverse === "true",
+      direction: (element.dataset.beltPortDirection ?? beltDirection) as Direction,
+    };
+  };
   const pointerTileAt = (clientX: number, clientY: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return undefined;
@@ -497,6 +506,7 @@ export default function Home() {
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const rightMouse = event.pointerType === "mouse" && event.button === 2;
     if (pendingBeltPlan || pendingBeltRemoval || game.phase !== "PLAYING" || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0 && !(beltMode && rightMouse))) return;
+    const portStart = beltMode ? pointerPortStart(event.target) : undefined;
     const tile = pointerTileAt(event.clientX, event.clientY) ?? pointerTile(event.target);
     if (beltMode && tile && (beltEraseMode || rightMouse)) {
       event.preventDefault();
@@ -508,7 +518,7 @@ export default function Home() {
       suppressClickUntilRef.current = event.timeStamp + 500;
       return;
     }
-    const beltStart = tile ? beltStartAtPort(tile) : undefined;
+    const beltStart = portStart ?? (tile ? beltStartAtPort(tile) : undefined);
     if (!rightMouse && beltMode && beltStart && canPaintBeltAt(beltStart.tile.x, beltStart.tile.y)) {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -662,7 +672,7 @@ export default function Home() {
         {visible.map(({ x, y }) => { const cx = Math.floor(x / CHUNK_SIZE); const cy = Math.floor(y / CHUNK_SIZE); const key = chunkKey(cx, cy); const insideMap = Math.max(Math.abs(cx), Math.abs(cy)) <= MAP_RADIUS_CHUNKS; const open = unlocked.has(key); const inSight = isWithinSight(x, y); const adjacent = insideMap && !open && isAdjacentChunk(cx, cy) && inSight; const fringe = insideMap && !open && !adjacent && inSight; const ore = open || inSight ? oreAnchorAt(x, y, game.worldSeed) : undefined; const plant = open ? availableWildPlantAt(x, y) : undefined; const surveyedOres = adjacent && isSurveyMarkerTile(cx, cy, x, y) ? oresForChunk(cx, cy, game.worldSeed) : undefined; const edge = x % CHUNK_SIZE === 0 || y % CHUNK_SIZE === 0; const fogTexture = open ? {} : { backgroundSize: `${scale * CHUNK_SIZE}px ${scale * CHUNK_SIZE}px`, backgroundPosition: `${-chunkLocal(x) * scale}px ${-chunkLocal(y) * scale}px` }; return <button type="button" tabIndex={-1} key={tileKey(x, y)} data-tile-x={x} data-tile-y={y} className={`tile ${open ? "open" : adjacent ? "adjacent" : fringe ? "fringe" : "fog"} ${edge ? "chunk-edge" : ""} ${ore ? "has-ore" : ""} ${surveyedOres ? "has-survey" : ""}`} style={{ ...tilePosition(x, y), ...fogTexture }} onMouseEnter={() => setHoverTile({ x, y })} onClick={(event) => handleTileClick(x, y, event.timeStamp)} onContextMenu={(event) => handleContext(event, x, y)} aria-label={`타일 ${x}, ${y}`}>{ore && <span className={`ore ore-${ore.tier} ${open ? "" : "ore-surveyed"}`} style={{ width: scale * 3 - 8, height: scale * 3 - 8 }} title={`${open ? "" : "탐사됨 · "}${ore.tier}티어 3×3 광맥`}><b>T{ore.tier}</b></span>}{plant && <span className="wild-plant item-sprite" style={itemSpriteStyle(plant.item)} title={`야생 ${ALL_ITEMS[plant.item].name} · 우클릭하여 채집`} />}{surveyedOres && <span className={`chunk-survey ${surveyedOres.length ? `survey-tier-${surveyedOres[0].tier}` : "survey-empty"}`}><b>{surveyedOres.length ? `T${surveyedOres[0].tier} 광맥` : "광맥 없음"}</b><small>{surveyedOres.length ? `${surveyedOres.length}개 탐지` : "0개"}</small></span>}</button>; })}
         {game.belts.map((belt) => <button key={tileKey(belt.x, belt.y)} data-tile-x={belt.x} data-tile-y={belt.y} type="button" className={`belt belt-direction-${belt.direction} ${beltShapeClass(belt, game.belts)} ${beltRemovePreviewKeys.has(tileKey(belt.x, belt.y)) ? "belt-remove-preview" : ""}`} style={tilePosition(belt.x, belt.y)} onContextMenu={(event) => handleContext(event, belt.x, belt.y)} aria-label={`${BELT_KIND_LABEL[beltKindOf(belt)]} 컨베이어 벨트 ${DIRECTIONS[belt.direction].arrow}`}><span data-arrow={DIRECTIONS[belt.direction].arrow} aria-hidden="true" />{belt.item && <i className="item-sprite belt-item-primary" style={itemSpriteStyle(belt.item)} title={ALL_ITEMS[belt.item].name} />}{belt.secondaryItem && <i className="item-sprite belt-item-secondary" style={itemSpriteStyle(belt.secondaryItem)} title={ALL_ITEMS[belt.secondaryItem].name} />}</button>)}
         {beltPreview.map((tile) => { const previewBelt: Belt = { ...tile, kind: beltKind }; return <div key={`preview-${tileKey(tile.x, tile.y)}`} className={`belt belt-preview belt-direction-${tile.direction} ${beltShapeClass(previewBelt, beltPreviewNetwork)}`} style={tilePosition(tile.x, tile.y)}><span data-arrow={DIRECTIONS[tile.direction].arrow} aria-hidden="true" /></div>; })}
-        {game.buildings.map((building) => { const definition = BUILDINGS[building.type]; const position = tilePosition(building.x, building.y); return <button key={building.id} data-tile-x={building.x} data-tile-y={building.y} type="button" className={`building building-${building.type} ${!building.active ? "offline" : ""} ${selectedId === building.id ? "selected" : ""}`} style={{ ...position, width: scale * definition.size, height: scale * definition.size }} onContextMenu={(event) => handleContext(event, building.x, building.y)} onClick={(event) => { if (event.timeStamp >= suppressClickUntilRef.current) setSelectedId(building.id); }}><BuildingPorts type={building.type} /><span className="building-glyph" style={buildingSpriteStyle(building.type)}>{definition.glyph}</span><strong>{definition.name}</strong><small>{!building.active ? "전력 부족" : building.type === "core" ? "ONLINE" : `${definition.power}⚡/2초`}</small></button>; })}
+        {game.buildings.map((building) => { const definition = BUILDINGS[building.type]; const position = tilePosition(building.x, building.y); return <button key={building.id} data-tile-x={building.x} data-tile-y={building.y} type="button" className={`building building-${building.type} ${!building.active ? "offline" : ""} ${selectedId === building.id ? "selected" : ""}`} style={{ ...position, width: scale * definition.size, height: scale * definition.size }} onContextMenu={(event) => handleContext(event, building.x, building.y)} onClick={(event) => { if (event.timeStamp >= suppressClickUntilRef.current) setSelectedId(building.id); }}><BuildingPorts type={building.type} x={building.x} y={building.y} /><span className="building-glyph" style={buildingSpriteStyle(building.type)}>{definition.glyph}</span><strong>{definition.name}</strong><small>{!building.active ? "전력 부족" : building.type === "core" ? "ONLINE" : `${definition.power}⚡/2초`}</small></button>; })}
         {previewTarget && previewType && <div className={`building building-preview ${previewValid ? "preview-valid" : "preview-invalid"}`} style={{ ...tilePosition(previewTarget.x, previewTarget.y), width: scale * BUILDINGS[previewType].size, height: scale * BUILDINGS[previewType].size }}><BuildingPorts type={previewType} /><span className="building-glyph" style={buildingSpriteStyle(previewType)}>{BUILDINGS[previewType].glyph}</span><strong>{BUILDINGS[previewType].name}</strong><small>{previewTarget.snapped ? "광맥 자동 정렬" : previewValid ? "설치 가능" : "설치 불가"}</small></div>}
         <div className="crosshair" aria-hidden="true" /><div className="coordinates">X {Math.floor(camera.x / TILE)} · Y {Math.floor(camera.y / TILE)} · {Math.round(zoom * 100)}%</div>
       </div>
@@ -699,14 +709,14 @@ export default function Home() {
   </main>;
 }
 
-function BuildingPorts({ type }: { type: BuildingType }) {
+function BuildingPorts({ type, x, y }: { type: BuildingType; x?: number; y?: number }) {
   const inputCount = type === "core" ? BUILDINGS[type].inputPorts - 1 : BUILDINGS[type].inputPorts;
   const outputCount = type === "core" ? BUILDINGS[type].outputPorts - 1 : BUILDINGS[type].outputPorts;
   if (inputCount === 0 && outputCount === 0) return null;
   return <span className="ports" aria-hidden="true">
-    {Array.from({ length: inputCount }, (_, index) => <i key={`in-${index}`} className="port port-input" style={{ top: `${((index + .5) / inputCount) * 100}%` }} />)}
-    {Array.from({ length: outputCount }, (_, index) => <i key={`out-${index}`} className="port port-output" style={{ top: `${((index + .5) / outputCount) * 100}%` }} />)}
-    {type === "core" && <><i className="port port-input port-top" /><i className="port port-output port-bottom" /></>}
+    {Array.from({ length: inputCount }, (_, index) => <i key={`in-${index}`} className="port port-input" data-belt-port-x={x === undefined ? undefined : x - 1} data-belt-port-y={y === undefined ? undefined : y + index} data-belt-port-reverse="true" data-belt-port-direction="right" style={{ top: `${((index + .5) / inputCount) * 100}%` }} />)}
+    {Array.from({ length: outputCount }, (_, index) => <i key={`out-${index}`} className="port port-output" data-belt-port-x={x === undefined ? undefined : x + BUILDINGS[type].size} data-belt-port-y={y === undefined ? undefined : y + index} data-belt-port-reverse="false" data-belt-port-direction="right" style={{ top: `${((index + .5) / outputCount) * 100}%` }} />)}
+    {type === "core" && <><i className="port port-input port-top" data-belt-port-x={x === undefined ? undefined : x + 2} data-belt-port-y={y === undefined ? undefined : y - 1} data-belt-port-reverse="true" data-belt-port-direction="down" /><i className="port port-output port-bottom" data-belt-port-x={x === undefined ? undefined : x + 2} data-belt-port-y={y === undefined ? undefined : y + BUILDINGS[type].size} data-belt-port-reverse="false" data-belt-port-direction="down" /></>}
   </span>;
 }
 function PanelHead({ eyebrow, title, close }: { eyebrow: string; title: string; close: () => void }) { return <div className="panel-head"><span><small>{eyebrow}</small><h2>{title}</h2></span><Button size="icon-sm" variant="ghost" onClick={close} aria-label="닫기"><X /></Button></div>; }

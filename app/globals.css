@@ -159,6 +159,7 @@ button { color: inherit; }
 .building.offline { filter: grayscale(.9) brightness(.62); border-color: #9b4a40; }
 .ports { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .port { position: absolute; width: 10px; height: 14px; transform: translateY(-50%); border: 2px solid #0b1011; box-shadow: 0 0 7px currentColor; }
+.world.mode-belt .building:not(.building-preview) .port { pointer-events: auto; cursor: crosshair; }
 .port-input { left: -6px; color: #67d9d1; background: #67d9d1; border-radius: 0 5px 5px 0; }
 .port-output { right: -6px; color: #f2a83b; background: #f2a83b; border-radius: 5px 0 0 5px; }
 .port-top { left: 50%; top: -6px !important; right: auto; width: 14px; height: 10px; transform: translateX(-50%); border-radius: 0 0 5px 5px; }
