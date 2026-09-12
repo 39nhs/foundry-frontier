@@ -118,10 +118,13 @@ export const DIRECTIONS: Record<Direction, { x: number; y: number; arrow: string
 export const SELLABLE_IDS = (Object.keys(ALL_ITEMS).map(Number) as AnyItemId[])
   .filter((id) => ALL_ITEMS[id].sellPrice !== undefined);
 
-export const CHUNK_SIZE = 10;
+export const CHUNK_SIZE = 15;
 export const MAP_RADIUS_CHUNKS = 15;
 export const TICK_MS = 2000;
 export const BUFFER_LIMIT = 50;
+const ORE_SIZE = 3;
+const ORE_ANCHOR_RANGE = CHUNK_SIZE - ORE_SIZE + 1;
+const SECOND_ORE_OFFSET = Math.floor(ORE_ANCHOR_RANGE / 2);
 
 export function chunkPrice(purchases: number) {
   const n = purchases + 1;
@@ -150,20 +153,20 @@ export function oresForChunk(cx: number, cy: number, worldSeed = 0) {
   const count = besideStart ? 1 + (countRoll % 2) : countRoll % 3;
 
   if (besideStart) {
-    const alongEdge = hashNumber(cx, cy, 31 ^ worldSeed) % 8;
+    const alongEdge = hashNumber(cx, cy, 31 ^ worldSeed) % ORE_ANCHOR_RANGE;
     return Array.from({ length: count }, (_, index) => {
-      const offset = index === 0 ? alongEdge : (alongEdge + 4) % 8;
+      const offset = index === 0 ? alongEdge : (alongEdge + SECOND_ORE_OFFSET) % ORE_ANCHOR_RANGE;
       if (cx === 1) return { x: cx * CHUNK_SIZE, y: offset, tier };
-      if (cx === -1) return { x: cx * CHUNK_SIZE + 7, y: offset, tier };
+      if (cx === -1) return { x: cx * CHUNK_SIZE + CHUNK_SIZE - ORE_SIZE, y: offset, tier };
       if (cy === 1) return { x: offset, y: cy * CHUNK_SIZE, tier };
-      return { x: offset, y: cy * CHUNK_SIZE + 7, tier };
+      return { x: offset, y: cy * CHUNK_SIZE + CHUNK_SIZE - ORE_SIZE, tier };
     });
   }
 
-  const firstX = hashNumber(cx, cy, 31 ^ worldSeed) % 8;
+  const firstX = hashNumber(cx, cy, 31 ^ worldSeed) % ORE_ANCHOR_RANGE;
   return Array.from({ length: count }, (_, index) => ({
-    x: cx * CHUNK_SIZE + (index === 0 ? firstX : (firstX + 4) % 8),
-    y: cy * CHUNK_SIZE + (hashNumber(cx, cy, (71 + index) ^ worldSeed) % 8),
+    x: cx * CHUNK_SIZE + (index === 0 ? firstX : (firstX + SECOND_ORE_OFFSET) % ORE_ANCHOR_RANGE),
+    y: cy * CHUNK_SIZE + (hashNumber(cx, cy, (71 + index) ^ worldSeed) % ORE_ANCHOR_RANGE),
     tier,
   }));
 }

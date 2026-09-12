@@ -13,7 +13,7 @@ type SoundKind = "build" | "belt" | "remove" | "mine" | "sale" | "unlock" | "ret
 interface PlacedBuilding { id: string; type: BuildingType; x: number; y: number; recipeId?: string; selectedOutput?: AnyItemId; outputSelections?: Partial<Record<number, AnyItemId>>; input: Inventory; output: Inventory; active: boolean }
 interface Belt { x: number; y: number; direction: Direction; item?: AnyItemId }
 interface SaleLine { item: AnyItemId; quantity: number }
-interface GameState { phase: GamePhase; worldSeed: number; gold: number; power: number; powerCapacity: number; tick: number; lastPowerProduced: number; lastPowerUsed: number; lastPowerDelta: number; unlockedChunks: string[]; buildings: PlacedBuilding[]; belts: Belt[]; core: Inventory; stagedSales: SaleLine[]; message: string }
+interface GameState { phase: GamePhase; chunkSize: number; worldSeed: number; gold: number; power: number; powerCapacity: number; tick: number; lastPowerProduced: number; lastPowerUsed: number; lastPowerDelta: number; unlockedChunks: string[]; buildings: PlacedBuilding[]; belts: Belt[]; core: Inventory; stagedSales: SaleLine[]; message: string }
 
 const TILE = 40;
 const SAVE_KEY = "foundry-frontier-save-v1";
@@ -22,14 +22,21 @@ const COMMAND_TRIGGER_WINDOW_MS = 1_200;
 const createWorldSeed = () => Math.floor(Math.random() * 0x7fffffff);
 const chunkKey = (x: number, y: number) => `${x},${y}`;
 const tileKey = (x: number, y: number) => `${x},${y}`;
+const CORE_START_TILE = Math.floor((CHUNK_SIZE - BUILDINGS.core.size) / 2);
+const CAMERA_START = CHUNK_SIZE * TILE / 2;
 const defaultCoreOutputs = (): Partial<Record<number, AnyItemId>> => Object.fromEntries(Array.from({ length: 6 }, (_, index) => [index, 103])) as Partial<Record<number, AnyItemId>>;
-const coreBuilding = (): PlacedBuilding => ({ id: "core", type: "core", x: 3, y: 3, outputSelections: defaultCoreOutputs(), input: {}, output: {}, active: true });
-const initialGame = (phase: GamePhase = "READY"): GameState => ({ phase, worldSeed: createWorldSeed(), gold: 1000, power: 10000, powerCapacity: 10000, tick: 0, lastPowerProduced: 200, lastPowerUsed: 0, lastPowerDelta: 200, unlockedChunks: ["0,0"], buildings: [coreBuilding()], belts: [], core: {}, stagedSales: [], message: "광맥이 없는 시작 광구에서 주변 탐사를 준비합니다." });
+const coreBuilding = (): PlacedBuilding => ({ id: "core", type: "core", x: CORE_START_TILE, y: CORE_START_TILE, outputSelections: defaultCoreOutputs(), input: {}, output: {}, active: true });
+const initialGame = (phase: GamePhase = "READY"): GameState => ({ phase, chunkSize: CHUNK_SIZE, worldSeed: createWorldSeed(), gold: 1000, power: 10000, powerCapacity: 10000, tick: 0, lastPowerProduced: 200, lastPowerUsed: 0, lastPowerDelta: 200, unlockedChunks: ["0,0"], buildings: [coreBuilding()], belts: [], core: {}, stagedSales: [], message: "광맥이 없는 시작 광구에서 주변 탐사를 준비합니다." });
 const BUILDING_SPRITE: Record<BuildingType, [number, number]> = { core: [0, 0], miner: [25, 0], advancedMiner: [50, 0], outputter: [75, 0], refinery: [100, 0], crusher: [0, 100], parts: [25, 100], synthesizer: [50, 100], generator: [75, 100], inputter: [100, 100] };
 const ITEM_SPRITES: AnyItemId[] = [101, 102, 103, 201, 202, 203, 301, 302, 303, 401, 402, 403, 501, 502, 503, 601, 602, 603];
 const buildingSpriteStyle = (type: BuildingType): CSSProperties => ({ backgroundPosition: `${BUILDING_SPRITE[type][0]}% ${BUILDING_SPRITE[type][1]}%` });
 const itemSpriteStyle = (id: AnyItemId): CSSProperties => { const index = ITEM_SPRITES.indexOf(id); return { backgroundPosition: `${(index % 6) * 20}% ${Math.floor(index / 6) * 50}%` }; };
 const chunkLocal = (value: number) => ((value % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+const migrateTileCoordinate = (value: number, previousChunkSize: number) => {
+  const chunk = Math.floor(value / previousChunkSize);
+  const local = value - chunk * previousChunkSize;
+  return chunk * CHUNK_SIZE + local;
+};
 
 function inventoryCount(inventory: Inventory, id: AnyItemId) { return inventory[id] ?? 0; }
 function inventoryTotal(inventory: Inventory) { return Object.values(inventory).reduce((sum, amount) => sum + (amount ?? 0), 0); }
@@ -115,19 +122,24 @@ function processTick(previous: GameState): GameState {
     used += definition.power;
     operate();
   }
-  const occupiedBelts = new globalThis.Map(state.belts.map((belt) => [tileKey(belt.x, belt.y), belt])); const moves: { from: Belt; to?: Belt; receiver?: PlacedBuilding }[] = [];
-  for (const belt of state.belts) { if (!belt.item) continue; const vector = DIRECTIONS[belt.direction]; const tx = belt.x + vector.x; const ty = belt.y + vector.y; const receiver = buildingAt(state.buildings, tx, ty); const nextBelt = occupiedBelts.get(tileKey(tx, ty)); if (receiver && isInputPort(receiver, tx, ty) && canAcceptInput(receiver, belt.item)) moves.push({ from: belt, receiver }); else if (nextBelt && !nextBelt.item) moves.push({ from: belt, to: nextBelt }); }
-  for (const move of moves) {
-    if (!move.from.item) continue;
-    if (move.receiver) {
-      if (!canAcceptInput(move.receiver, move.from.item)) continue;
-      addItem(move.receiver.type === "core" ? state.core : move.receiver.input, move.from.item, 1, move.receiver.type === "core" ? Infinity : BUFFER_LIMIT);
+  const occupiedBelts = new globalThis.Map(state.belts.map((belt) => [tileKey(belt.x, belt.y), belt]));
+  const pendingBelts = new Set(state.belts.filter((belt) => belt.item));
+  let beltMoved = true;
+  while (pendingBelts.size > 0 && beltMoved) {
+    beltMoved = false;
+    for (const belt of [...pendingBelts]) {
+      if (!belt.item) { pendingBelts.delete(belt); continue; }
+      const vector = DIRECTIONS[belt.direction];
+      const tx = belt.x + vector.x; const ty = belt.y + vector.y;
+      const receiver = buildingAt(state.buildings, tx, ty);
+      const nextBelt = occupiedBelts.get(tileKey(tx, ty));
+      if (receiver && isInputPort(receiver, tx, ty) && canAcceptInput(receiver, belt.item)) {
+        addItem(receiver.type === "core" ? state.core : receiver.input, belt.item, 1, receiver.type === "core" ? Infinity : BUFFER_LIMIT);
+        belt.item = undefined; pendingBelts.delete(belt); beltMoved = true;
+      } else if (nextBelt && !nextBelt.item) {
+        nextBelt.item = belt.item; belt.item = undefined; pendingBelts.delete(belt); beltMoved = true;
+      }
     }
-    if (move.to) {
-      if (move.to.item) continue;
-      move.to.item = move.from.item;
-    }
-    move.from.item = undefined;
   }
   for (const building of state.buildings) {
     const outputEntry = Object.entries(building.output).find(([, amount]) => (amount ?? 0) > 0);
@@ -166,7 +178,7 @@ function processTick(previous: GameState): GameState {
 function Stat({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail?: string }) { return <div className="stat"><span className="stat-icon">{icon}</span><span><small>{label}</small><strong>{value}</strong>{detail && <em>{detail}</em>}</span></div>; }
 
 export default function Home() {
-  const [game, setGame] = useState<GameState>(initialGame); const [ready, setReady] = useState(false); const [camera, setCamera] = useState({ x: 5 * TILE, y: 5 * TILE }); const [viewport, setViewport] = useState({ width: 1200, height: 800 }); const [zoom, setZoom] = useState(1);
+  const [game, setGame] = useState<GameState>(initialGame); const [ready, setReady] = useState(false); const [camera, setCamera] = useState({ x: CAMERA_START, y: CAMERA_START }); const [viewport, setViewport] = useState({ width: 1200, height: 800 }); const [zoom, setZoom] = useState(1);
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false); const [commandInput, setCommandInput] = useState(""); const [commandFeedback, setCommandFeedback] = useState("");
@@ -183,7 +195,7 @@ export default function Home() {
 
   useEffect(() => { const music = new Audio("/audio/mechanical-pulse.mp3"); music.loop = true; music.preload = "auto"; music.volume = .16; musicRef.current = music; const place = new Audio("/audio/sfx-place-device.wav"); const remove = new Audio("/audio/sfx-remove-device.wav"); place.preload = "auto"; remove.preload = "auto"; assetSoundsRef.current = { place, remove }; return () => { music.pause(); musicRef.current = null; assetSoundsRef.current = null; }; }, []);
 
-  useEffect(() => { const timer = window.setTimeout(() => { const saved = localStorage.getItem(SAVE_KEY); if (saved) try { const parsed = JSON.parse(saved) as GameState; parsed.buildings = parsed.buildings.map((building) => { if (building.type !== "core") return building; const legacyItem = building.selectedOutput ?? 103; return { ...building, x: 3, y: 3, selectedOutput: undefined, outputSelections: { ...Object.fromEntries(Array.from({ length: 6 }, (_, index) => [index, legacyItem])), ...building.outputSelections } }; }); parsed.worldSeed ??= createWorldSeed(); parsed.lastPowerProduced ??= 200; parsed.lastPowerUsed ??= 0; parsed.lastPowerDelta ??= 200; parsed.phase = parsed.phase === "GAME_OVER" ? "GAME_OVER" : "READY"; setGame(parsed); setHasSavedGame(parsed.tick > 0 || parsed.buildings.length > 1 || parsed.unlockedChunks.length > 1); } catch { localStorage.removeItem(SAVE_KEY); } setReady(true); }, 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => { const saved = localStorage.getItem(SAVE_KEY); if (saved) try { const parsed = JSON.parse(saved) as GameState; const previousChunkSize = parsed.chunkSize ?? 10; const migrateCoordinates = previousChunkSize !== CHUNK_SIZE; parsed.buildings = parsed.buildings.map((building) => { if (building.type !== "core") return migrateCoordinates ? { ...building, x: migrateTileCoordinate(building.x, previousChunkSize), y: migrateTileCoordinate(building.y, previousChunkSize) } : building; const legacyItem = building.selectedOutput ?? 103; return { ...building, x: CORE_START_TILE, y: CORE_START_TILE, selectedOutput: undefined, outputSelections: { ...Object.fromEntries(Array.from({ length: 6 }, (_, index) => [index, legacyItem])), ...building.outputSelections } }; }); if (migrateCoordinates) parsed.belts = parsed.belts.map((belt) => ({ ...belt, x: migrateTileCoordinate(belt.x, previousChunkSize), y: migrateTileCoordinate(belt.y, previousChunkSize) })); parsed.chunkSize = CHUNK_SIZE; parsed.worldSeed ??= createWorldSeed(); parsed.lastPowerProduced ??= 200; parsed.lastPowerUsed ??= 0; parsed.lastPowerDelta ??= 200; parsed.phase = parsed.phase === "GAME_OVER" ? "GAME_OVER" : "READY"; setGame(parsed); setHasSavedGame(parsed.tick > 0 || parsed.buildings.length > 1 || parsed.unlockedChunks.length > 1); } catch { localStorage.removeItem(SAVE_KEY); } setReady(true); }, 0); return () => window.clearTimeout(timer); }, []);
   useEffect(() => { if (ready) localStorage.setItem(SAVE_KEY, JSON.stringify(game)); }, [game, ready]);
   useEffect(() => { if (!ready || game.phase !== "PLAYING") return; const timer = window.setInterval(() => setGame(processTick), TICK_MS); return () => window.clearInterval(timer); }, [ready, game.phase]);
   useEffect(() => { if (!viewportRef.current) return; const observer = new ResizeObserver(([entry]) => setViewport({ width: entry.contentRect.width, height: entry.contentRect.height })); observer.observe(viewportRef.current); return () => observer.disconnect(); }, []);
@@ -234,10 +246,11 @@ export default function Home() {
   };
   const isSurveyMarkerTile = (cx: number, cy: number, x: number, y: number) => {
     const left = cx * CHUNK_SIZE; const top = cy * CHUNK_SIZE;
-    if (unlocked.has(chunkKey(cx - 1, cy))) return x === left + 1 && y === top + 4;
-    if (unlocked.has(chunkKey(cx + 1, cy))) return x === left + 8 && y === top + 4;
-    if (unlocked.has(chunkKey(cx, cy - 1))) return x === left + 4 && y === top + 1;
-    if (unlocked.has(chunkKey(cx, cy + 1))) return x === left + 4 && y === top + 8;
+    const center = Math.floor(CHUNK_SIZE / 2); const farEdge = CHUNK_SIZE - 2;
+    if (unlocked.has(chunkKey(cx - 1, cy))) return x === left + 1 && y === top + center;
+    if (unlocked.has(chunkKey(cx + 1, cy))) return x === left + farEdge && y === top + center;
+    if (unlocked.has(chunkKey(cx, cy - 1))) return x === left + center && y === top + 1;
+    if (unlocked.has(chunkKey(cx, cy + 1))) return x === left + center && y === top + farEdge;
     return false;
   };
   const canPlace = (type: BuildingType, x: number, y: number, ignoreId?: string) => { const size = BUILDINGS[type].size; for (let ty = y; ty < y + size; ty += 1) for (let tx = x; tx < x + size; tx += 1) { const cx = Math.floor(tx / CHUNK_SIZE); const cy = Math.floor(ty / CHUNK_SIZE); if (!unlocked.has(chunkKey(cx, cy)) || buildingAt(game.buildings, tx, ty, ignoreId) || game.belts.some((b) => b.x === tx && b.y === ty)) return false; } if (type === "miner" || type === "advancedMiner") { let vein: ReturnType<typeof oreAt>; for (let ty = y; ty < y + size && !vein; ty += 1) for (let tx = x; tx < x + size && !vein; tx += 1) vein = oreAt(tx, ty, game.worldSeed); if (!vein || (type === "miner" && vein.tier === 1)) return false; } return true; };
@@ -316,7 +329,7 @@ export default function Home() {
   const submitCommand = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); executeCommand(); };
   const closePanels = () => { setBuildOpen(false); setMarketOpen(false); setHelpOpen(false); setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); setSelectedBuilding(null); setSelectedId(null); setBeltMode(false); setMovingId(null); setPendingChunk(null); };
   const startGame = () => { setGame((state) => state.power <= 0 ? { ...state, phase: "GAME_OVER" } : { ...state, phase: "PLAYING", message: state.tick > 0 ? "저장된 공장 운영을 계속합니다." : "공장 운영을 시작합니다." }); setHasSavedGame(true); };
-  const resetGame = (startImmediately = false) => { localStorage.removeItem(SAVE_KEY); setGame(initialGame(startImmediately ? "PLAYING" : "READY")); setHasSavedGame(startImmediately); setCamera({ x: 5 * TILE, y: 5 * TILE }); closePanels(); };
+  const resetGame = (startImmediately = false) => { localStorage.removeItem(SAVE_KEY); setGame(initialGame(startImmediately ? "PLAYING" : "READY")); setHasSavedGame(startImmediately); setCamera({ x: CAMERA_START, y: CAMERA_START }); closePanels(); };
   const totalStaged = game.stagedSales.reduce((sum, line) => sum + (ALL_ITEMS[line.item].sellPrice ?? 0) * line.quantity, 0);
   const movingBuilding = movingId ? game.buildings.find((building) => building.id === movingId) ?? null : null;
   const movingInventory = movingBuilding ? inventoryTotal(movingBuilding.input) + inventoryTotal(movingBuilding.output) : 0;
