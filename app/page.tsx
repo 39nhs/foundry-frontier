@@ -11,6 +11,7 @@ type Inventory = Partial<Record<AnyItemId, number>>;
 type GamePhase = "READY" | "PLAYING" | "GAME_OVER";
 type SoundKind = "build" | "belt" | "remove" | "mine" | "sale" | "unlock" | "return" | "warning";
 type BeltKind = "normal" | "cross" | "splitter" | "merger";
+type GiveCommand = { kind: "gold"; amount: number } | { kind: "all" };
 interface PlacedBuilding { id: string; type: BuildingType; x: number; y: number; recipeId?: string; selectedOutput?: AnyItemId; outputSelections?: Partial<Record<number, AnyItemId>>; input: Inventory; output: Inventory; active: boolean }
 interface Belt { x: number; y: number; direction: Direction; kind?: BeltKind; item?: AnyItemId; secondaryItem?: AnyItemId; splitIndex?: 0 | 1 }
 interface SaleLine { item: AnyItemId; quantity: number }
@@ -53,6 +54,23 @@ function inventoryTotal(inventory: Inventory) { return Object.values(inventory).
 function addItem(inventory: Inventory, id: AnyItemId, amount: number, limit = Infinity) { inventory[id] = Math.max(0, Math.min(limit, inventoryCount(inventory, id) + amount)); }
 function hasInventory(inventory: Inventory) { return Object.values(inventory).some((amount) => (amount ?? 0) > 0); }
 function inventoryTypeCount(inventory: Inventory) { return Object.values(inventory).filter((amount) => (amount ?? 0) > 0).length; }
+export function parseGiveCommand(value: string): GiveCommand | undefined {
+  const command = value.trim().toLowerCase();
+  if (command === "give all") return { kind: "all" };
+  const match = command.match(/^give\s+(\d+)$/);
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  return Number.isSafeInteger(amount) && amount > 0 ? { kind: "gold", amount } : undefined;
+}
+export function applyGiveCommand(state: GameState, command: GiveCommand): GameState {
+  if (command.kind === "all") {
+    const core = { ...state.core };
+    for (const id of Object.keys(ALL_ITEMS)) addItem(core, Number(id) as AnyItemId, 999);
+    return { ...state, core, message: `개발자 명령 적용 · 모든 재료 ${Object.keys(ALL_ITEMS).length}종을 999개씩 추가` };
+  }
+  const gold = Math.min(MAX_GOLD, state.gold + command.amount);
+  return { ...state, gold, message: `개발자 명령 적용 · 골드 ${(gold - state.gold).toLocaleString()} G 추가` };
+}
 function inputSlotLimit(building: PlacedBuilding) {
   if (building.type === "core") return Infinity;
   if (building.type === "inputter") return 6;
@@ -391,7 +409,13 @@ export default function Home() {
   const selectAllCurrent = () => { const staged = game.stagedSales.filter((line) => line.item === saleItem).reduce((sum, line) => sum + line.quantity, 0); setSaleQuantity(Math.max(0, inventoryCount(game.core, saleItem) - staged)); };
   const stageAllSellable = () => { const lines = SELLABLE_IDS.map((item) => ({ item, quantity: inventoryCount(game.core, item) })).filter((line) => line.quantity > 0); setGame((s) => ({ ...s, stagedSales: lines, message: lines.length ? "판매 가능한 전체 재고를 스테이지에 올렸습니다." : "판매 가능한 재고가 없습니다." })); };
   const confirmSale = () => { let earnings = 0; const core = { ...game.core }; for (const line of game.stagedSales) { if (!Number.isInteger(line.quantity) || line.quantity < 1 || inventoryCount(core, line.item) < line.quantity) { setGame((state) => ({ ...state, message: "판매 목록이 올바르지 않거나 재고가 부족합니다." })); return; } addItem(core, line.item, -line.quantity); earnings += (ALL_ITEMS[line.item].sellPrice ?? 0) * line.quantity; } playSound("sale"); setGame((s) => ({ ...s, core, gold: s.gold + earnings, stagedSales: [], message: `${earnings.toLocaleString()}골드 판매 완료` })); };
-  const executeCommand = () => { if (commandInput.trim().toLowerCase() !== "wwssadad") { setCommandFeedback("알 수 없는 명령입니다."); return; } playSound("sale"); setGame((state) => ({ ...state, gold: MAX_GOLD, message: `개발자 명령 적용 · 골드 ${MAX_GOLD.toLocaleString()} G` })); setCommandFeedback(""); setCommandInput(""); setCommandOpen(false); };
+  const executeCommand = () => {
+    const command = parseGiveCommand(commandInput);
+    if (!command) { setCommandFeedback("사용법: give 1000 또는 give all"); return; }
+    playSound("sale");
+    setGame((state) => applyGiveCommand(state, command));
+    setCommandFeedback(""); setCommandInput(""); setCommandOpen(false);
+  };
   const submitCommand = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); executeCommand(); };
   const closePanels = () => { setBuildOpen(false); setMarketOpen(false); setHelpOpen(false); setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); setSelectedBuilding(null); setSelectedId(null); setBeltMode(false); setMovingId(null); setPendingChunk(null); };
   const startGame = () => { setGame((state) => state.power <= 0 ? { ...state, phase: "GAME_OVER" } : { ...state, phase: "PLAYING", message: state.tick > 0 ? "저장된 공장 운영을 계속합니다." : "공장 운영을 시작합니다." }); setHasSavedGame(true); };
@@ -424,7 +448,7 @@ export default function Home() {
       {marketOpen && <aside className="panel market-panel"><PanelHead eyebrow="광구 거래소" title="판매 스테이지" close={() => setMarketOpen(false)} /><label className="field-label">판매 아이템<select value={saleItem} onChange={(e) => setSaleItem(Number(e.target.value) as AnyItemId)}>{SELLABLE_IDS.map((id) => <option value={id} key={id}>{ALL_ITEMS[id].name} · 보유 {inventoryCount(game.core, id)}개 · {ALL_ITEMS[id].sellPrice} G</option>)}</select></label><div className="stock-line"><span>현재 보유량</span><strong>{inventoryCount(game.core, saleItem).toLocaleString()}개</strong></div><label className="field-label">수량<div className="quantity-row"><Input min={1} step={1} type="number" value={saleQuantity} onChange={(e) => setSaleQuantity(e.target.value === "" ? "" : Number(e.target.value))} /><Button variant="outline" onClick={selectAllCurrent}>전량 선택</Button></div></label><div className="market-actions"><Button onClick={stageSale}>선택 수량 올리기</Button><Button variant="outline" onClick={stageAllSellable}>전체 재고 올리기</Button></div><div className="sale-stage">{game.stagedSales.length === 0 ? <p>판매할 아이템을 선택해 주세요.</p> : game.stagedSales.map((line, index) => <div key={`${line.item}-${index}`}><span>{ALL_ITEMS[line.item].name}</span><strong>{line.quantity}개</strong><em>{((ALL_ITEMS[line.item].sellPrice ?? 0) * line.quantity).toLocaleString()} G</em></div>)}</div><div className="sale-total"><span>예상 수익</span><strong>{totalStaged.toLocaleString()} G</strong></div><Button disabled={!game.stagedSales.length} onClick={confirmSale} className="w-full sell-button"><Coins /> 판매 확정</Button></aside>}
       {pendingChunk && <aside className="chunk-dialog"><small>미개척 구역</small><h2>청크 [{pendingChunk.x}, {pendingChunk.y}]</h2><p>새 광맥과 건설 공간을 조사합니다. 인접 청크만 해금할 수 있습니다.</p><strong>{chunkPrice(game.unlockedChunks.length - 1).toLocaleString()} GOLD</strong><div><Button variant="outline" onClick={() => setPendingChunk(null)}>취소</Button><Button onClick={buyChunk}>구역 해금</Button></div></aside>}
       {helpOpen && <aside className="help-dialog"><PanelHead eyebrow="운영 매뉴얼" title="조작 방법" close={() => setHelpOpen(false)} /><div className="help-grid"><kbd>W A S D</kbd><span>카메라 이동</span><kbd>좌클릭</kbd><span>설치 및 결정</span><kbd>우클릭</kbd><span>설비 관리 / 광맥 직접 채굴</span><kbd>Q / E / Space</kbd><span>건물 / 벨트 / 판매소</span><kbd>연속 클릭</kbd><span>일반 벨트 직선·ㄱ자 자동 연결</span><kbd>F</kbd><span>일반 / 교차 / 분배 / 합류 벨트 변경</span><kbd>R</kbd><span>다음 벨트 출력 방향 회전</span><kbd>휠</kbd><span>지도 확대·축소</span><kbd>터치</kbd><span>드래그 이동 / 길게 눌러 관리·채굴</span></div><p>교차 벨트는 표시 방향과 시계 방향의 두 흐름을 독립 운송합니다. 분배 벨트는 표시 방향과 시계 방향 출구를 번갈아 사용하고, 합류 벨트는 여러 입력을 표시 방향 하나로 보냅니다.</p></aside>}
-      {commandOpen && <aside className="command-console" role="dialog" aria-modal="true" aria-label="커맨드 입력"><form onSubmit={submitCommand}><PanelHead eyebrow="FOUNDRY SYSTEM" title="커맨드 입력" close={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }} /><p>승인된 시스템 코드를 입력하세요.</p><label className="field-label" htmlFor="command-code">COMMAND CODE<Input id="command-code" autoFocus autoComplete="off" spellCheck={false} value={commandInput} onChange={(event) => { setCommandInput(event.target.value); setCommandFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); executeCommand(); } else if (event.key === "Escape") { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); } }} placeholder="코드 입력" /></label>{commandFeedback && <p className="command-feedback" role="alert">{commandFeedback}</p>}<div className="command-actions"><Button type="button" variant="outline" onClick={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }}>취소</Button><Button type="button" onClick={executeCommand}>실행</Button></div></form></aside>}
+      {commandOpen && <aside className="command-console" role="dialog" aria-modal="true" aria-label="커맨드 입력"><form onSubmit={submitCommand}><PanelHead eyebrow="FOUNDRY SYSTEM" title="커맨드 입력" close={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }} /><p><code>give 숫자</code>는 골드를, <code>give all</code>은 모든 재료를 추가합니다.</p><label className="field-label" htmlFor="command-code">COMMAND CODE<Input id="command-code" autoFocus autoComplete="off" spellCheck={false} value={commandInput} onChange={(event) => { setCommandInput(event.target.value); setCommandFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); executeCommand(); } else if (event.key === "Escape") { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); } }} placeholder="give 1000 / give all" /></label>{commandFeedback && <p className="command-feedback" role="alert">{commandFeedback}</p>}<div className="command-actions"><Button type="button" variant="outline" onClick={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }}>취소</Button><Button type="button" onClick={executeCommand}>실행</Button></div></form></aside>}
     </section>
   </main>;
 }
