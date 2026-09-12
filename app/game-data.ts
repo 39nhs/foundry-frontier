@@ -4,12 +4,18 @@ export type ItemId =
   | 301 | 302 | 303
   | 401 | 402 | 403
   | 501 | 502 | 503
-  | 601 | 602 | 603;
+  | 601 | 602 | 603 | 604
+  | 701 | 702 | 703
+  | 711 | 712 | 713
+  | 721 | 722 | 723
+  | 801 | 802 | 803 | 804
+  | 901 | 902 | 903;
 
 export type BuildingType =
   | "core" | "miner" | "advancedMiner" | "outputter"
   | "refinery" | "crusher" | "parts" | "synthesizer"
-  | "generator" | "inputter";
+  | "generator" | "inputter" | "seedExtractor" | "cultivator"
+  | "bioprocessor";
 
 export type Direction = "up" | "right" | "down" | "left";
 
@@ -37,6 +43,22 @@ export const ITEMS: Partial<Record<ItemId, ItemDefinition>> = {
   501: { id: 501, name: "1티어 부품", short: "T1 부품", color: "#ffb938", sellPrice: 125 },
   502: { id: 502, name: "2티어 부품", short: "T2 부품", color: "#22c8b7", sellPrice: 65 },
   503: { id: 503, name: "3티어 부품", short: "T3 부품", color: "#91a0ae", sellPrice: 40 },
+  701: { id: 701, name: "태양포자 씨앗", short: "태양 씨앗", color: "#e7ba52" },
+  702: { id: 702, name: "철갈대 씨앗", short: "갈대 씨앗", color: "#b86f45" },
+  703: { id: 703, name: "서리이끼 씨앗", short: "서리 씨앗", color: "#77c8c2" },
+  711: { id: 711, name: "태양포자", short: "태양포자", color: "#f0ce65" },
+  712: { id: 712, name: "철갈대", short: "철갈대", color: "#c98559" },
+  713: { id: 713, name: "서리이끼", short: "서리이끼", color: "#8fddd6" },
+  721: { id: 721, name: "태양포자 추출물", short: "태양 추출", color: "#ffd978" },
+  722: { id: 722, name: "철갈대 섬유", short: "갈대 섬유", color: "#d69667" },
+  723: { id: 723, name: "서리이끼 효소", short: "서리 효소", color: "#a5eee8" },
+  801: { id: 801, name: "바이오 탄소", short: "바이오 탄소", color: "#66736a" },
+  802: { id: 802, name: "영양 젤", short: "영양 젤", color: "#b9d95f", sellPrice: 180 },
+  803: { id: 803, name: "절연 수지", short: "절연 수지", color: "#63b9b0", sellPrice: 220 },
+  804: { id: 804, name: "촉매 펄프", short: "촉매 펄프", color: "#d3a96a", sellPrice: 250 },
+  901: { id: 901, name: "산업 폭약", short: "산업 폭약", color: "#e27c45", sellPrice: 320 },
+  902: { id: 902, name: "회로 코팅제", short: "회로 코팅", color: "#4fcfc0", sellPrice: 380 },
+  903: { id: 903, name: "복합 장갑판", short: "복합 장갑", color: "#aab2a5", sellPrice: 450 },
 };
 
 // 배터리는 판매와 발전 양쪽에 쓰이므로 별도 번호 대역으로 관리합니다.
@@ -44,6 +66,7 @@ export const BATTERIES = {
   601: { id: 601, name: "1티어 배터리", short: "T1 전지", color: "#ffca47", sellPrice: 500, power: 2250 },
   602: { id: 602, name: "2티어 배터리", short: "T2 전지", color: "#39d8ca", sellPrice: 125, power: 1250 },
   603: { id: 603, name: "3티어 배터리", short: "T3 전지", color: "#aab7c3", sellPrice: 75, power: 500 },
+  604: { id: 604, name: "바이오 하이브리드 전지", short: "바이오 전지", color: "#9edb64", sellPrice: 750, power: 3500 },
 } as const;
 
 export type AnyItemId = ItemId;
@@ -55,10 +78,32 @@ export interface Recipe {
   inputs: Partial<Record<AnyItemId, number>>;
   output: AnyItemId;
   amount: number;
+  durationTicks?: number;
 }
 
 export const RECIPES: Record<BuildingType, Recipe[]> = {
   core: [], miner: [], advancedMiner: [], outputter: [], generator: [], inputter: [],
+  seedExtractor: [
+    { id: "seed-sunspore", name: "태양포자 채종", inputs: { 711: 1 }, output: 701, amount: 2 },
+    { id: "seed-ironreed", name: "철갈대 채종", inputs: { 712: 1 }, output: 702, amount: 2 },
+    { id: "seed-frostmoss", name: "서리이끼 채종", inputs: { 713: 1 }, output: 703, amount: 2 },
+  ],
+  cultivator: [
+    { id: "grow-sunspore", name: "태양포자 재배", inputs: { 701: 1 }, output: 711, amount: 1, durationTicks: 3 },
+    { id: "grow-ironreed", name: "철갈대 재배", inputs: { 702: 1 }, output: 712, amount: 1, durationTicks: 3 },
+    { id: "grow-frostmoss", name: "서리이끼 재배", inputs: { 703: 1 }, output: 713, amount: 1, durationTicks: 3 },
+  ],
+  bioprocessor: [
+    { id: "extract-sunspore", name: "태양포자 추출", inputs: { 711: 1 }, output: 721, amount: 2 },
+    { id: "fiber-ironreed", name: "철갈대 섬유화", inputs: { 712: 1 }, output: 722, amount: 2 },
+    { id: "enzyme-frostmoss", name: "서리이끼 효소화", inputs: { 713: 1 }, output: 723, amount: 2 },
+    { id: "carbon-sunspore", name: "태양포자 탄화", inputs: { 711: 1 }, output: 801, amount: 1 },
+    { id: "carbon-ironreed", name: "철갈대 탄화", inputs: { 712: 1 }, output: 801, amount: 1 },
+    { id: "carbon-frostmoss", name: "서리이끼 탄화", inputs: { 713: 1 }, output: 801, amount: 1 },
+    { id: "nutrient-gel", name: "영양 젤", inputs: { 721: 1, 722: 1 }, output: 802, amount: 1, durationTicks: 2 },
+    { id: "insulation-resin", name: "절연 수지", inputs: { 722: 1, 723: 1 }, output: 803, amount: 1, durationTicks: 2 },
+    { id: "catalyst-pulp", name: "촉매 펄프", inputs: { 721: 1, 723: 1 }, output: 804, amount: 1, durationTicks: 2 },
+  ],
   refinery: [
     { id: "refine-1", name: "1티어 정제", inputs: { 101: 1 }, output: 201, amount: 1 },
     { id: "refine-2", name: "2티어 정제", inputs: { 102: 1 }, output: 202, amount: 1 },
@@ -76,18 +121,22 @@ export const RECIPES: Record<BuildingType, Recipe[]> = {
     { id: "parts-1", name: "1티어 부품", inputs: { 401: 1 }, output: 501, amount: 1 },
     { id: "parts-2", name: "2티어 부품", inputs: { 202: 1 }, output: 502, amount: 1 },
     { id: "parts-3", name: "3티어 부품", inputs: { 203: 1 }, output: 503, amount: 1 },
+    { id: "industrial-explosive", name: "산업 폭약", inputs: { 721: 1, 301: 1 }, output: 901, amount: 1, durationTicks: 2 },
+    { id: "circuit-coating", name: "회로 코팅제", inputs: { 803: 1, 502: 1 }, output: 902, amount: 1, durationTicks: 2 },
+    { id: "composite-plating", name: "복합 장갑판", inputs: { 804: 1, 503: 1 }, output: 903, amount: 1, durationTicks: 2 },
   ],
   synthesizer: [
     { id: "battery-1", name: "1티어 배터리", inputs: { 401: 1, 501: 1 }, output: 601, amount: 1 },
     { id: "battery-2", name: "2티어 배터리", inputs: { 202: 1, 502: 1 }, output: 602, amount: 1 },
     { id: "battery-3", name: "3티어 배터리", inputs: { 403: 1, 503: 1 }, output: 603, amount: 1 },
+    { id: "battery-bio", name: "바이오 하이브리드 전지", inputs: { 801: 1, 802: 1, 901: 1 }, output: 604, amount: 1, durationTicks: 3 },
   ],
 };
 
 export interface BuildingDefinition {
   type: BuildingType;
   name: string;
-  category: "채굴" | "가공" | "물류" | "전력";
+  category: "채굴" | "재배" | "가공" | "물류" | "전력";
   cost: number;
   power: number;
   size: 3 | 5;
@@ -108,6 +157,9 @@ export const BUILDINGS: Record<BuildingType, BuildingDefinition> = {
   synthesizer: { type: "synthesizer", name: "합성기", category: "가공", cost: 100, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "가공물과 부품으로 배터리를 만듭니다.", glyph: "S" },
   generator: { type: "generator", name: "전기 생성기", category: "전력", cost: 125, power: 0, size: 3, inputPorts: 3, outputPorts: 3, description: "10틱마다 배터리를 전력으로 변환합니다.", glyph: "G" },
   inputter: { type: "inputter", name: "입력기", category: "물류", cost: 50, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "5틱마다 보관 아이템을 코어로 전송합니다.", glyph: "I" },
+  seedExtractor: { type: "seedExtractor", name: "채종기", category: "재배", cost: 35, power: 10, size: 3, inputPorts: 3, outputPorts: 3, description: "식물 1개에서 씨앗 2개를 분리합니다.", glyph: "D" },
+  cultivator: { type: "cultivator", name: "재배기", category: "재배", cost: 45, power: 20, size: 3, inputPorts: 3, outputPorts: 3, description: "씨앗을 3틱 동안 길러 식물로 만듭니다.", glyph: "V" },
+  bioprocessor: { type: "bioprocessor", name: "생물 가공기", category: "재배", cost: 70, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "식물을 추출·탄화하고 복합 소재를 만듭니다.", glyph: "B" },
 };
 
 export const DIRECTIONS: Record<Direction, { x: number; y: number; arrow: string }> = {

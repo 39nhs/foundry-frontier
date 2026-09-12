@@ -10,15 +10,20 @@ import { ALL_ITEMS, BUFFER_LIMIT, BUILDINGS, BuildingType, CHUNK_SIZE, Direction
 type Inventory = Partial<Record<AnyItemId, number>>;
 type GamePhase = "READY" | "PLAYING" | "GAME_OVER";
 type SoundKind = "build" | "belt" | "remove" | "mine" | "sale" | "unlock" | "return" | "warning";
+type BeltKind = "normal" | "cross" | "splitter" | "merger";
 interface PlacedBuilding { id: string; type: BuildingType; x: number; y: number; recipeId?: string; selectedOutput?: AnyItemId; outputSelections?: Partial<Record<number, AnyItemId>>; input: Inventory; output: Inventory; active: boolean }
-interface Belt { x: number; y: number; direction: Direction; item?: AnyItemId }
+interface Belt { x: number; y: number; direction: Direction; kind?: BeltKind; item?: AnyItemId; secondaryItem?: AnyItemId; splitIndex?: 0 | 1 }
 interface SaleLine { item: AnyItemId; quantity: number }
-interface GameState { phase: GamePhase; chunkSize: number; worldSeed: number; gold: number; power: number; powerCapacity: number; tick: number; lastPowerProduced: number; lastPowerUsed: number; lastPowerDelta: number; unlockedChunks: string[]; buildings: PlacedBuilding[]; belts: Belt[]; core: Inventory; stagedSales: SaleLine[]; message: string }
+interface GameState { dataVersion: number; phase: GamePhase; chunkSize: number; worldSeed: number; gold: number; power: number; powerCapacity: number; tick: number; lastPowerProduced: number; lastPowerUsed: number; lastPowerDelta: number; unlockedChunks: string[]; buildings: PlacedBuilding[]; belts: Belt[]; core: Inventory; stagedSales: SaleLine[]; message: string }
 
 const TILE = 40;
 const SAVE_KEY = "foundry-frontier-save-v1";
+const DATA_VERSION = 2;
+const STARTER_SEEDS: Inventory = { 701: 2, 702: 2, 703: 2 };
 const MAX_GOLD = 999_999_999;
 const COMMAND_TRIGGER_WINDOW_MS = 1_200;
+const BELT_KINDS: BeltKind[] = ["normal", "cross", "splitter", "merger"];
+const BELT_KIND_LABEL: Record<BeltKind, string> = { normal: "일반", cross: "교차", splitter: "분배", merger: "합류" };
 const createWorldSeed = () => Math.floor(Math.random() * 0x7fffffff);
 const chunkKey = (x: number, y: number) => `${x},${y}`;
 const tileKey = (x: number, y: number) => `${x},${y}`;
@@ -26,11 +31,12 @@ const CORE_START_TILE = Math.floor((CHUNK_SIZE - BUILDINGS.core.size) / 2);
 const CAMERA_START = CHUNK_SIZE * TILE / 2;
 const defaultCoreOutputs = (): Partial<Record<number, AnyItemId>> => Object.fromEntries(Array.from({ length: 6 }, (_, index) => [index, 103])) as Partial<Record<number, AnyItemId>>;
 const coreBuilding = (): PlacedBuilding => ({ id: "core", type: "core", x: CORE_START_TILE, y: CORE_START_TILE, outputSelections: defaultCoreOutputs(), input: {}, output: {}, active: true });
-const initialGame = (phase: GamePhase = "READY"): GameState => ({ phase, chunkSize: CHUNK_SIZE, worldSeed: createWorldSeed(), gold: 1000, power: 10000, powerCapacity: 10000, tick: 0, lastPowerProduced: 200, lastPowerUsed: 0, lastPowerDelta: 200, unlockedChunks: ["0,0"], buildings: [coreBuilding()], belts: [], core: {}, stagedSales: [], message: "광맥이 없는 시작 광구에서 주변 탐사를 준비합니다." });
-const BUILDING_SPRITE: Record<BuildingType, [number, number]> = { core: [0, 0], miner: [25, 0], advancedMiner: [50, 0], outputter: [75, 0], refinery: [100, 0], crusher: [0, 100], parts: [25, 100], synthesizer: [50, 100], generator: [75, 100], inputter: [100, 100] };
+const initialGame = (phase: GamePhase = "READY"): GameState => ({ dataVersion: DATA_VERSION, phase, chunkSize: CHUNK_SIZE, worldSeed: createWorldSeed(), gold: 1000, power: 10000, powerCapacity: 10000, tick: 0, lastPowerProduced: 200, lastPowerUsed: 0, lastPowerDelta: 200, unlockedChunks: ["0,0"], buildings: [coreBuilding()], belts: [], core: { ...STARTER_SEEDS }, stagedSales: [], message: "광맥이 없는 시작 광구입니다. 지급된 씨앗으로 재배망을 만들거나 주변을 탐사하세요." });
+const BUILDING_SPRITE: Record<BuildingType, [number, number]> = { core: [0, 0], miner: [25, 0], advancedMiner: [50, 0], outputter: [75, 0], refinery: [100, 0], crusher: [0, 100], parts: [25, 100], synthesizer: [50, 100], generator: [75, 100], inputter: [100, 100], seedExtractor: [0, 100], cultivator: [75, 0], bioprocessor: [50, 100] };
 const ITEM_SPRITES: AnyItemId[] = [101, 102, 103, 201, 202, 203, 301, 302, 303, 401, 402, 403, 501, 502, 503, 601, 602, 603];
+const ITEM_SPRITE_SOURCE: Partial<Record<AnyItemId, AnyItemId>> = { 604: 601, 701: 101, 702: 102, 703: 103, 711: 201, 712: 202, 713: 203, 721: 301, 722: 302, 723: 303, 801: 403, 802: 401, 803: 402, 804: 403, 901: 501, 902: 502, 903: 503 };
 const buildingSpriteStyle = (type: BuildingType): CSSProperties => ({ backgroundPosition: `${BUILDING_SPRITE[type][0]}% ${BUILDING_SPRITE[type][1]}%` });
-const itemSpriteStyle = (id: AnyItemId): CSSProperties => { const index = ITEM_SPRITES.indexOf(id); return { backgroundPosition: `${(index % 6) * 20}% ${Math.floor(index / 6) * 50}%` }; };
+const itemSpriteStyle = (id: AnyItemId): CSSProperties => { const index = ITEM_SPRITES.indexOf(ITEM_SPRITE_SOURCE[id] ?? id); return { backgroundPosition: `${(index % 6) * 20}% ${Math.floor(index / 6) * 50}%` }; };
 const chunkLocal = (value: number) => ((value % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
 const migrateTileCoordinate = (value: number, previousChunkSize: number) => {
   const chunk = Math.floor(value / previousChunkSize);
@@ -82,7 +88,26 @@ function directionBetween(from: { x: number; y: number }, to: { x: number; y: nu
   if (dx === 0 && dy === -1) return "up";
   return undefined;
 }
+function rotateDirection(direction: Direction, steps: number): Direction {
+  const order: Direction[] = ["up", "right", "down", "left"];
+  return order[(order.indexOf(direction) + steps + order.length) % order.length];
+}
+function beltKindOf(belt: Belt): BeltKind { return belt.kind ?? "normal"; }
+function secondaryBeltDirection(belt: Belt) { return rotateDirection(belt.direction, 1); }
+function beltCanAccept(belt: Belt, incomingDirection: Direction) {
+  if (beltKindOf(belt) !== "cross") return belt.item === undefined;
+  if (incomingDirection === belt.direction) return belt.item === undefined;
+  if (incomingDirection === secondaryBeltDirection(belt)) return belt.secondaryItem === undefined;
+  return false;
+}
+function placeOnBelt(belt: Belt, item: AnyItemId, incomingDirection: Direction) {
+  if (!beltCanAccept(belt, incomingDirection)) return false;
+  if (beltKindOf(belt) === "cross" && incomingDirection === secondaryBeltDirection(belt)) belt.secondaryItem = item;
+  else belt.item = item;
+  return true;
+}
 function beltShapeClass(belt: Belt, belts: Belt[]) {
+  if (beltKindOf(belt) !== "normal") return `belt-kind-${beltKindOf(belt)}`;
   const incoming = belts.find((candidate) => {
     if (candidate === belt) return false;
     const vector = DIRECTIONS[candidate.direction];
@@ -103,7 +128,7 @@ function processTick(previous: GameState): GameState {
 
   for (const building of state.buildings) {
     if (building.type !== "generator" || state.tick % 10 !== 0) continue;
-    const battery = ([601, 602, 603] as AnyItemId[]).find((id) => inventoryCount(building.input, id) > 0);
+    const battery = ([604, 601, 602, 603] as AnyItemId[]).find((id) => inventoryCount(building.input, id) > 0);
     if (battery) { addItem(building.input, battery, -1); produced += ALL_ITEMS[battery].power ?? 0; }
   }
   let availablePower = state.power + produced;
@@ -129,7 +154,7 @@ function processTick(previous: GameState): GameState {
       if (state.tick % 5 === 0 && hasInventory(building.input)) operate = () => { for (const [id, amount] of Object.entries(building.input)) { addItem(state.core, Number(id) as AnyItemId, amount ?? 0); delete building.input[Number(id) as AnyItemId]; } };
     } else {
       const recipe = RECIPES[building.type].find((candidate) => candidate.id === building.recipeId);
-      if (recipe && inventoryCount(building.output, recipe.output) < BUFFER_LIMIT) {
+      if (recipe && state.tick % (recipe.durationTicks ?? 1) === 0 && inventoryCount(building.output, recipe.output) < BUFFER_LIMIT) {
         const canCraft = Object.entries(recipe.inputs).every(([id, amount]) => inventoryCount(building.input, Number(id) as AnyItemId) >= (amount ?? 0));
         if (canCraft) operate = () => { for (const [id, amount] of Object.entries(recipe.inputs)) addItem(building.input, Number(id) as AnyItemId, -(amount ?? 0)); addItem(building.output, recipe.output, recipe.amount, BUFFER_LIMIT); };
       }
@@ -141,22 +166,38 @@ function processTick(previous: GameState): GameState {
     operate();
   }
   const occupiedBelts = new globalThis.Map(state.belts.map((belt) => [tileKey(belt.x, belt.y), belt]));
-  const pendingBelts = new Set(state.belts.filter((belt) => belt.item));
+  const pendingBelts = new Set(state.belts.filter((belt) => belt.item || belt.secondaryItem));
+  const moveToDirection = (belt: Belt, item: AnyItemId, direction: Direction) => {
+    const vector = DIRECTIONS[direction];
+    const tx = belt.x + vector.x; const ty = belt.y + vector.y;
+    const receiver = buildingAt(state.buildings, tx, ty);
+    const nextBelt = occupiedBelts.get(tileKey(tx, ty));
+    if (receiver && isInputPort(receiver, tx, ty) && canAcceptInput(receiver, item)) {
+      addItem(receiver.type === "core" ? state.core : receiver.input, item, 1, receiver.type === "core" ? Infinity : BUFFER_LIMIT);
+      return true;
+    }
+    return Boolean(nextBelt && placeOnBelt(nextBelt, item, direction));
+  };
   let beltMoved = true;
   while (pendingBelts.size > 0 && beltMoved) {
     beltMoved = false;
     for (const belt of [...pendingBelts]) {
-      if (!belt.item) { pendingBelts.delete(belt); continue; }
-      const vector = DIRECTIONS[belt.direction];
-      const tx = belt.x + vector.x; const ty = belt.y + vector.y;
-      const receiver = buildingAt(state.buildings, tx, ty);
-      const nextBelt = occupiedBelts.get(tileKey(tx, ty));
-      if (receiver && isInputPort(receiver, tx, ty) && canAcceptInput(receiver, belt.item)) {
-        addItem(receiver.type === "core" ? state.core : receiver.input, belt.item, 1, receiver.type === "core" ? Infinity : BUFFER_LIMIT);
-        belt.item = undefined; pendingBelts.delete(belt); beltMoved = true;
-      } else if (nextBelt && !nextBelt.item) {
-        nextBelt.item = belt.item; belt.item = undefined; pendingBelts.delete(belt); beltMoved = true;
+      const kind = beltKindOf(belt);
+      if (kind === "cross") {
+        if (belt.item && moveToDirection(belt, belt.item, belt.direction)) { belt.item = undefined; beltMoved = true; }
+        const secondaryDirection = secondaryBeltDirection(belt);
+        if (belt.secondaryItem && moveToDirection(belt, belt.secondaryItem, secondaryDirection)) { belt.secondaryItem = undefined; beltMoved = true; }
+      } else if (belt.item) {
+        const outputs = kind === "splitter"
+          ? (belt.splitIndex ?? 0) === 0 ? [belt.direction, secondaryBeltDirection(belt)] : [secondaryBeltDirection(belt), belt.direction]
+          : [belt.direction];
+        if (outputs.some((direction) => moveToDirection(belt, belt.item as AnyItemId, direction))) {
+          belt.item = undefined;
+          if (kind === "splitter") belt.splitIndex = (belt.splitIndex ?? 0) === 0 ? 1 : 0;
+          beltMoved = true;
+        }
       }
+      if (!belt.item && !belt.secondaryItem) pendingBelts.delete(belt);
     }
   }
   for (const building of state.buildings) {
@@ -173,7 +214,8 @@ function processTick(previous: GameState): GameState {
           continue;
         }
         const belt = occupiedBelts.get(tileKey(target.x, target.y));
-        if (belt && !belt.item) { belt.item = item; addItem(state.core, item, -1); }
+        const outputDirection: Direction = target.x === building.x + BUILDINGS[building.type].size ? "right" : "down";
+        if (belt && placeOnBelt(belt, item, outputDirection)) addItem(state.core, item, -1);
       }
       continue;
     }
@@ -181,8 +223,8 @@ function processTick(previous: GameState): GameState {
     if (!item) continue;
     const receiver = targets.map((target) => buildingAt(state.buildings, target.x, target.y)).find((candidate, index) => candidate && isInputPort(candidate, targets[index].x, targets[index].y) && canAcceptInput(candidate, item));
     if (receiver) { addItem(receiver.type === "core" ? state.core : receiver.input, item, 1, receiver.type === "core" ? Infinity : BUFFER_LIMIT); addItem(building.output, item, -1); continue; }
-    const belt = targets.map((target) => occupiedBelts.get(tileKey(target.x, target.y))).find((candidate) => candidate && !candidate.item);
-    if (belt) { belt.item = item; addItem(building.output, item, -1); }
+    const beltTarget = targets.map((target) => ({ target, belt: occupiedBelts.get(tileKey(target.x, target.y)) })).find(({ target, belt }) => belt && beltCanAccept(belt, target.x === building.x + BUILDINGS[building.type].size ? "right" : "down"));
+    if (beltTarget?.belt) { const outputDirection: Direction = beltTarget.target.x === building.x + BUILDINGS[building.type].size ? "right" : "down"; placeOnBelt(beltTarget.belt, item, outputDirection); addItem(building.output, item, -1); }
   }
   state.power = Math.max(0, Math.min(state.powerCapacity, availablePower));
   state.lastPowerProduced = produced;
@@ -200,7 +242,7 @@ export default function Home() {
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false); const [commandInput, setCommandInput] = useState(""); const [commandFeedback, setCommandFeedback] = useState("");
-  const [buildOpen, setBuildOpen] = useState(false); const [marketOpen, setMarketOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [selectedBuilding, setSelectedBuilding] = useState<BuildingType | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null); const [beltMode, setBeltMode] = useState(false); const [beltDirection, setBeltDirection] = useState<Direction>("right"); const [movingId, setMovingId] = useState<string | null>(null); const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null); const [pendingChunk, setPendingChunk] = useState<{ x: number; y: number } | null>(null); const [saleItem, setSaleItem] = useState<AnyItemId>(603); const [saleQuantity, setSaleQuantity] = useState<number | "">(1);
+  const [buildOpen, setBuildOpen] = useState(false); const [marketOpen, setMarketOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [selectedBuilding, setSelectedBuilding] = useState<BuildingType | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null); const [beltMode, setBeltMode] = useState(false); const [beltDirection, setBeltDirection] = useState<Direction>("right"); const [beltKind, setBeltKind] = useState<BeltKind>("normal"); const [movingId, setMovingId] = useState<string | null>(null); const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null); const [pendingChunk, setPendingChunk] = useState<{ x: number; y: number } | null>(null); const [saleItem, setSaleItem] = useState<AnyItemId>(603); const [saleQuantity, setSaleQuantity] = useState<number | "">(1);
   const viewportRef = useRef<HTMLDivElement>(null); const keysRef = useRef(new Set<string>()); const lastFrameRef = useRef(0);
   const enterSequenceRef = useRef<number[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null); const musicRef = useRef<HTMLAudioElement | null>(null); const assetSoundsRef = useRef<{ place: HTMLAudioElement; remove: HTMLAudioElement } | null>(null);
@@ -213,7 +255,7 @@ export default function Home() {
 
   useEffect(() => { const music = new Audio("/audio/mechanical-pulse.mp3"); music.loop = true; music.preload = "auto"; music.volume = .16; musicRef.current = music; const place = new Audio("/audio/sfx-place-device.wav"); const remove = new Audio("/audio/sfx-remove-device.wav"); place.preload = "auto"; remove.preload = "auto"; assetSoundsRef.current = { place, remove }; return () => { music.pause(); musicRef.current = null; assetSoundsRef.current = null; }; }, []);
 
-  useEffect(() => { const timer = window.setTimeout(() => { const saved = localStorage.getItem(SAVE_KEY); if (saved) try { const parsed = JSON.parse(saved) as GameState; const previousChunkSize = parsed.chunkSize ?? 10; const migrateCoordinates = previousChunkSize !== CHUNK_SIZE; parsed.buildings = parsed.buildings.map((building) => { if (building.type !== "core") return migrateCoordinates ? { ...building, x: migrateTileCoordinate(building.x, previousChunkSize), y: migrateTileCoordinate(building.y, previousChunkSize) } : building; const legacyItem = building.selectedOutput ?? 103; return { ...building, x: CORE_START_TILE, y: CORE_START_TILE, selectedOutput: undefined, outputSelections: { ...Object.fromEntries(Array.from({ length: 6 }, (_, index) => [index, legacyItem])), ...building.outputSelections } }; }); if (migrateCoordinates) parsed.belts = parsed.belts.map((belt) => ({ ...belt, x: migrateTileCoordinate(belt.x, previousChunkSize), y: migrateTileCoordinate(belt.y, previousChunkSize) })); parsed.chunkSize = CHUNK_SIZE; parsed.worldSeed ??= createWorldSeed(); parsed.lastPowerProduced ??= 200; parsed.lastPowerUsed ??= 0; parsed.lastPowerDelta ??= 200; parsed.phase = parsed.phase === "GAME_OVER" ? "GAME_OVER" : "READY"; setGame(parsed); setHasSavedGame(parsed.tick > 0 || parsed.buildings.length > 1 || parsed.unlockedChunks.length > 1); } catch { localStorage.removeItem(SAVE_KEY); } setReady(true); }, 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => { const saved = localStorage.getItem(SAVE_KEY); if (saved) try { const parsed = JSON.parse(saved) as GameState; const previousChunkSize = parsed.chunkSize ?? 10; const migrateCoordinates = previousChunkSize !== CHUNK_SIZE; parsed.buildings = parsed.buildings.map((building) => { if (building.type !== "core") return migrateCoordinates ? { ...building, x: migrateTileCoordinate(building.x, previousChunkSize), y: migrateTileCoordinate(building.y, previousChunkSize) } : building; const legacyItem = building.selectedOutput ?? 103; return { ...building, x: CORE_START_TILE, y: CORE_START_TILE, selectedOutput: undefined, outputSelections: { ...Object.fromEntries(Array.from({ length: 6 }, (_, index) => [index, legacyItem])), ...building.outputSelections } }; }); if (migrateCoordinates) parsed.belts = parsed.belts.map((belt) => ({ ...belt, x: migrateTileCoordinate(belt.x, previousChunkSize), y: migrateTileCoordinate(belt.y, previousChunkSize) })); parsed.chunkSize = CHUNK_SIZE; parsed.worldSeed ??= createWorldSeed(); parsed.lastPowerProduced ??= 200; parsed.lastPowerUsed ??= 0; parsed.lastPowerDelta ??= 200; parsed.core ??= {}; if ((parsed.dataVersion ?? 1) < DATA_VERSION) for (const [id, amount] of Object.entries(STARTER_SEEDS)) addItem(parsed.core, Number(id) as AnyItemId, amount ?? 0); parsed.dataVersion = DATA_VERSION; parsed.phase = parsed.phase === "GAME_OVER" ? "GAME_OVER" : "READY"; setGame(parsed); setHasSavedGame(parsed.tick > 0 || parsed.buildings.length > 1 || parsed.unlockedChunks.length > 1); } catch { localStorage.removeItem(SAVE_KEY); } setReady(true); }, 0); return () => window.clearTimeout(timer); }, []);
   useEffect(() => { if (ready) localStorage.setItem(SAVE_KEY, JSON.stringify(game)); }, [game, ready]);
   useEffect(() => { if (!ready || game.phase !== "PLAYING") return; const timer = window.setInterval(() => setGame(processTick), TICK_MS); return () => window.clearInterval(timer); }, [ready, game.phase]);
   useEffect(() => { if (!viewportRef.current) return; const observer = new ResizeObserver(([entry]) => setViewport({ width: entry.contentRect.width, height: entry.contentRect.height })); observer.observe(viewportRef.current); return () => observer.disconnect(); }, []);
@@ -240,6 +282,7 @@ export default function Home() {
       if (key === "e") { setBeltMode((v) => !v); setSelectedBuilding(null); }
       if (key === " ") { event.preventDefault(); setMarketOpen((v) => !v); setBuildOpen(false); }
       if (key === "r" && beltMode) { const order: Direction[] = ["up", "right", "down", "left"]; setBeltDirection((d) => order[(order.indexOf(d) + 1) % order.length]); }
+      if (key === "f" && beltMode) setBeltKind((kind) => BELT_KINDS[(BELT_KINDS.indexOf(kind) + 1) % BELT_KINDS.length]);
       if (key === "escape") { setBuildOpen(false); setMarketOpen(false); setHelpOpen(false); setCommandOpen(false); setSelectedId(null); setSelectedBuilding(null); setBeltMode(false); setMovingId(null); setPendingChunk(null); }
     };
     const up = (event: KeyboardEvent) => keysRef.current.delete(event.key.toLowerCase()); window.addEventListener("keydown", down); window.addEventListener("keyup", up); return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
@@ -284,7 +327,7 @@ export default function Home() {
     if (eventTime < suppressClickUntilRef.current || game.phase !== "PLAYING") return;
     const cx = Math.floor(rawX / CHUNK_SIZE); const cy = Math.floor(rawY / CHUNK_SIZE);
     if (!unlocked.has(chunkKey(cx, cy))) { if (Math.max(Math.abs(cx), Math.abs(cy)) <= MAP_RADIUS_CHUNKS && isAdjacentChunk(cx, cy)) setPendingChunk({ x: cx, y: cy }); return; }
-    if (beltMode) { if (buildingAt(game.buildings, rawX, rawY)) return; playSound("belt"); setGame((state) => { const replacing = state.belts.some((belt) => belt.x === rawX && belt.y === rawY); const belts = state.belts.filter((belt) => belt.x !== rawX || belt.y !== rawY); const previous = replacing ? undefined : belts.at(-1); const turnDirection = previous ? directionBetween(previous, { x: rawX, y: rawY }) : undefined; const connectedBelts = turnDirection ? belts.map((belt) => belt === previous ? { ...belt, direction: turnDirection } : belt) : belts; return { ...state, belts: [...connectedBelts, { x: rawX, y: rawY, direction: beltDirection }], message: turnDirection ? `벨트 자동 연결 ${DIRECTIONS[turnDirection].arrow}` : `벨트 ${DIRECTIONS[beltDirection].arrow} 설치` }; }); return; }
+    if (beltMode) { if (buildingAt(game.buildings, rawX, rawY)) return; playSound("belt"); setGame((state) => { const replaced = state.belts.find((belt) => belt.x === rawX && belt.y === rawY); const belts = state.belts.filter((belt) => belt.x !== rawX || belt.y !== rawY); const previous = replaced ? undefined : belts.at(-1); const turnDirection = beltKind === "normal" && previous && beltKindOf(previous) === "normal" ? directionBetween(previous, { x: rawX, y: rawY }) : undefined; const connectedBelts = turnDirection ? belts.map((belt) => belt === previous ? { ...belt, direction: turnDirection } : belt) : belts; const core = { ...state.core }; if (replaced?.item) addItem(core, replaced.item, 1); if (replaced?.secondaryItem) addItem(core, replaced.secondaryItem, 1); return { ...state, core, belts: [...connectedBelts, { x: rawX, y: rawY, direction: beltDirection, kind: beltKind, splitIndex: 0 }], message: turnDirection ? `벨트 자동 연결 ${DIRECTIONS[turnDirection].arrow}` : `${BELT_KIND_LABEL[beltKind]} 벨트 ${DIRECTIONS[beltDirection].arrow} 설치` }; }); return; }
     const buildingType = movingId ? game.buildings.find((b) => b.id === movingId)?.type : selectedBuilding;
     if (!buildingType || buildingType === "core") return;
     const target = placementTarget(buildingType, rawX, rawY); const { x, y } = target;
@@ -297,7 +340,7 @@ export default function Home() {
     if (game.phase !== "PLAYING") return;
     const building = buildingAt(game.buildings, x, y);
     if (building) { setSelectedId(building.id); return; }
-    if (game.belts.some((belt) => belt.x === x && belt.y === y)) { playSound("remove"); setGame((s) => ({ ...s, belts: s.belts.filter((belt) => belt.x !== x || belt.y !== y), message: "벨트를 철거했습니다." })); return; }
+    if (game.belts.some((belt) => belt.x === x && belt.y === y)) { playSound("remove"); setGame((s) => { const removed = s.belts.find((belt) => belt.x === x && belt.y === y); const core = { ...s.core }; if (removed?.item) addItem(core, removed.item, 1); if (removed?.secondaryItem) addItem(core, removed.secondaryItem, 1); return { ...s, core, belts: s.belts.filter((belt) => belt.x !== x || belt.y !== y), message: "벨트를 철거하고 운송 중이던 아이템을 코어로 반환했습니다." }; }); return; }
     const ore = oreAt(x, y, game.worldSeed); const cx = Math.floor(x / CHUNK_SIZE); const cy = Math.floor(y / CHUNK_SIZE);
     if (ore && unlocked.has(chunkKey(cx, cy))) { const item = (100 + ore.tier) as AnyItemId; playSound("mine"); setGame((s) => ({ ...s, core: { ...s.core, [item]: inventoryCount(s.core, item) + 1 }, message: `${ALL_ITEMS[item].name} 1개를 직접 채굴했습니다.` })); }
   };
@@ -332,6 +375,7 @@ export default function Home() {
   };
   const buyChunk = () => { if (!pendingChunk) return; const price = chunkPrice(game.unlockedChunks.length - 1); if (game.gold < price) { setGame((s) => ({ ...s, message: "청크를 해금할 골드가 부족합니다." })); return; } playSound("unlock"); setGame((s) => ({ ...s, gold: s.gold - price, unlockedChunks: [...s.unlockedChunks, chunkKey(pendingChunk.x, pendingChunk.y)], message: `청크 [${pendingChunk.x}, ${pendingChunk.y}] 해금` })); setPendingChunk(null); };
   const rotateBelt = () => { const order: Direction[] = ["up", "right", "down", "left"]; setBeltDirection((d) => order[(order.indexOf(d) + 1) % order.length]); };
+  const cycleBeltKind = () => setBeltKind((kind) => BELT_KINDS[(BELT_KINDS.indexOf(kind) + 1) % BELT_KINDS.length]);
   const updateBuilding = (patch: Partial<PlacedBuilding>) => { if (selected) setGame((s) => ({ ...s, buildings: s.buildings.map((b) => b.id === selected.id ? { ...b, ...patch } : b) })); };
   const updateCoreOutput = (portIndex: number, item: AnyItemId) => { if (!selected || selected.type !== "core") return; setGame((state) => ({ ...state, buildings: state.buildings.map((building) => building.id === selected.id ? { ...building, outputSelections: { ...building.outputSelections, [portIndex]: item } } : building), message: `코어 출력 포트 ${portIndex + 1}을 ${ALL_ITEMS[item].name}(으)로 설정했습니다.` })); };
   const returnInventoryItem = (kind: "input" | "output", item: AnyItemId) => { if (!selected || selected.type === "core") return; playSound("return"); setGame((state) => { const building = state.buildings.find((entry) => entry.id === selected.id); if (!building) return state; const amount = inventoryCount(building[kind], item); if (amount <= 0) return state; const core = { ...state.core }; addItem(core, item, amount); return { ...state, core, buildings: state.buildings.map((entry) => entry.id === building.id ? { ...entry, [kind]: { ...entry[kind], [item]: 0 } } : entry), message: `${ALL_ITEMS[item].name} ${amount}개를 코어로 회수했습니다.` }; }); };
@@ -361,21 +405,21 @@ export default function Home() {
     <section className="workspace">
       <div ref={viewportRef} className={`world ${beltMode ? "mode-belt" : ""} ${selectedBuilding || movingId ? "mode-build" : ""}`} onMouseLeave={() => setHoverTile(null)} onWheel={(event) => setZoom((v) => Math.max(.55, Math.min(1.45, v - event.deltaY * .0008)))} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishPointer} onPointerCancel={finishPointer} onContextMenu={(event) => event.preventDefault()} aria-label="공장 건설 지도"><div className="terrain" />
         {visible.map(({ x, y }) => { const cx = Math.floor(x / CHUNK_SIZE); const cy = Math.floor(y / CHUNK_SIZE); const key = chunkKey(cx, cy); const insideMap = Math.max(Math.abs(cx), Math.abs(cy)) <= MAP_RADIUS_CHUNKS; const open = unlocked.has(key); const inSight = isWithinSight(x, y); const adjacent = insideMap && isAdjacentChunk(cx, cy) && inSight; const fringe = insideMap && !open && !adjacent && inSight; const ore = open || inSight ? oreAnchorAt(x, y, game.worldSeed) : undefined; const surveyedOres = adjacent && isSurveyMarkerTile(cx, cy, x, y) ? oresForChunk(cx, cy, game.worldSeed) : undefined; const edge = x % CHUNK_SIZE === 0 || y % CHUNK_SIZE === 0; const fogTexture = open ? {} : { backgroundSize: `${scale * CHUNK_SIZE}px ${scale * CHUNK_SIZE}px`, backgroundPosition: `${-chunkLocal(x) * scale}px ${-chunkLocal(y) * scale}px` }; return <button type="button" tabIndex={-1} key={tileKey(x, y)} data-tile-x={x} data-tile-y={y} className={`tile ${open ? "open" : adjacent ? "adjacent" : fringe ? "fringe" : "fog"} ${edge ? "chunk-edge" : ""}`} style={{ ...tilePosition(x, y), ...fogTexture }} onMouseEnter={() => setHoverTile({ x, y })} onClick={(event) => handleTileClick(x, y, event.timeStamp)} onContextMenu={(event) => handleContext(event, x, y)} aria-label={`타일 ${x}, ${y}`}>{ore && <span className={`ore ore-${ore.tier} ${open ? "" : "ore-surveyed"}`} style={{ width: scale * 3 - 8, height: scale * 3 - 8 }} title={`${open ? "" : "탐사됨 · "}${ore.tier}티어 3×3 광맥`}><b>T{ore.tier}</b></span>}{surveyedOres && <span className={`chunk-survey ${surveyedOres.length ? `survey-tier-${surveyedOres[0].tier}` : "survey-empty"}`}><b>{surveyedOres.length ? `T${surveyedOres[0].tier} 광맥` : "광맥 없음"}</b><small>{surveyedOres.length ? `${surveyedOres.length}개 탐지` : "0개"}</small></span>}</button>; })}
-        {game.belts.map((belt) => <button key={tileKey(belt.x, belt.y)} data-tile-x={belt.x} data-tile-y={belt.y} type="button" className={`belt belt-direction-${belt.direction} ${beltShapeClass(belt, game.belts)}`} style={tilePosition(belt.x, belt.y)} onContextMenu={(event) => handleContext(event, belt.x, belt.y)} aria-label={`컨베이어 벨트 ${DIRECTIONS[belt.direction].arrow}`}><span data-arrow={DIRECTIONS[belt.direction].arrow} aria-hidden="true" />{belt.item && <i className="item-sprite" style={itemSpriteStyle(belt.item)} title={ALL_ITEMS[belt.item].name} />}</button>)}
+        {game.belts.map((belt) => <button key={tileKey(belt.x, belt.y)} data-tile-x={belt.x} data-tile-y={belt.y} type="button" className={`belt belt-direction-${belt.direction} ${beltShapeClass(belt, game.belts)}`} style={tilePosition(belt.x, belt.y)} onContextMenu={(event) => handleContext(event, belt.x, belt.y)} aria-label={`${BELT_KIND_LABEL[beltKindOf(belt)]} 컨베이어 벨트 ${DIRECTIONS[belt.direction].arrow}`}><span data-arrow={DIRECTIONS[belt.direction].arrow} aria-hidden="true" />{belt.item && <i className="item-sprite belt-item-primary" style={itemSpriteStyle(belt.item)} title={ALL_ITEMS[belt.item].name} />}{belt.secondaryItem && <i className="item-sprite belt-item-secondary" style={itemSpriteStyle(belt.secondaryItem)} title={ALL_ITEMS[belt.secondaryItem].name} />}</button>)}
         {game.buildings.map((building) => { const definition = BUILDINGS[building.type]; const position = tilePosition(building.x, building.y); return <button key={building.id} data-tile-x={building.x} data-tile-y={building.y} type="button" className={`building building-${building.type} ${!building.active ? "offline" : ""} ${selectedId === building.id ? "selected" : ""}`} style={{ ...position, width: scale * definition.size, height: scale * definition.size }} onContextMenu={(event) => handleContext(event, building.x, building.y)} onClick={(event) => { if (event.timeStamp >= suppressClickUntilRef.current) setSelectedId(building.id); }}><BuildingPorts type={building.type} /><span className="building-glyph" style={buildingSpriteStyle(building.type)}>{definition.glyph}</span><strong>{definition.name}</strong><small>{!building.active ? "전력 부족" : building.type === "core" ? "ONLINE" : `${definition.power}⚡/틱`}</small></button>; })}
         {previewTarget && previewType && <div className={`building building-preview ${previewValid ? "preview-valid" : "preview-invalid"}`} style={{ ...tilePosition(previewTarget.x, previewTarget.y), width: scale * BUILDINGS[previewType].size, height: scale * BUILDINGS[previewType].size }}><BuildingPorts type={previewType} /><span className="building-glyph" style={buildingSpriteStyle(previewType)}>{BUILDINGS[previewType].glyph}</span><strong>{BUILDINGS[previewType].name}</strong><small>{previewTarget.snapped ? "광맥 자동 정렬" : previewValid ? "설치 가능" : "설치 불가"}</small></div>}
         <div className="crosshair" aria-hidden="true" /><div className="coordinates">X {Math.floor(camera.x / TILE)} · Y {Math.floor(camera.y / TILE)} · {Math.round(zoom * 100)}%</div>
       </div>
-      <nav className="command-dock" aria-label="게임 명령"><Button className={buildOpen || selectedBuilding ? "active" : ""} variant="secondary" onClick={() => { setBuildOpen((v) => !v); setMarketOpen(false); }}><Hammer /> {selectedBuilding ? BUILDINGS[selectedBuilding].name : "건물"} <kbd>Q</kbd></Button><Button className={beltMode ? "active" : ""} variant="secondary" onClick={() => { setBeltMode((v) => !v); setSelectedBuilding(null); }}><Box /> 벨트 <kbd>E</kbd></Button>{beltMode && <Button variant="outline" onClick={rotateBelt}><RotateCw /> {DIRECTIONS[beltDirection].arrow} <kbd>R</kbd></Button>}<Button className={marketOpen ? "active" : ""} variant="secondary" onClick={() => { setMarketOpen((v) => !v); setBuildOpen(false); setSelectedBuilding(null); }}><ShoppingCart /> 판매소 <kbd>Space</kbd></Button></nav>
+      <nav className="command-dock" aria-label="게임 명령"><Button className={buildOpen || selectedBuilding ? "active" : ""} variant="secondary" onClick={() => { setBuildOpen((v) => !v); setMarketOpen(false); }}><Hammer /> {selectedBuilding ? BUILDINGS[selectedBuilding].name : "건물"} <kbd>Q</kbd></Button><Button className={beltMode ? "active" : ""} variant="secondary" onClick={() => { setBeltMode((v) => !v); setSelectedBuilding(null); }}><Box /> 벨트 <kbd>E</kbd></Button>{beltMode && <><Button variant="outline" onClick={cycleBeltKind}>{BELT_KIND_LABEL[beltKind]} <kbd>F</kbd></Button><Button variant="outline" onClick={rotateBelt}><RotateCw /> {DIRECTIONS[beltDirection].arrow} <kbd>R</kbd></Button></>}<Button className={marketOpen ? "active" : ""} variant="secondary" onClick={() => { setMarketOpen((v) => !v); setBuildOpen(false); setSelectedBuilding(null); }}><ShoppingCart /> 판매소 <kbd>Space</kbd></Button></nav>
       <div className="status-line"><span className="pulse" />{game.message}<small>자동 저장됨</small></div>
       {movingBuilding && <div className="relocation-banner" role="status"><Move /><span><strong>{BUILDINGS[movingBuilding.type].name} 이동 중</strong><small>새 위치를 클릭하거나 탭하세요 · 내부 아이템 {movingInventory}개 유지</small></span><Button size="sm" variant="outline" onClick={cancelMove}>취소</Button></div>}
       {game.phase === "READY" && <section className="state-overlay" role="dialog" aria-modal="true" aria-labelledby="ready-title"><div className="state-card"><small>FOUNDRY CONTROL</small><h1 id="ready-title">가동 준비 완료</h1><p>{hasSavedGame ? "저장된 공장 상태를 불러왔습니다. 준비가 되면 운영을 계속하세요." : "미개척 광구의 첫 생산 라인을 구축할 준비가 되었습니다."}</p><div className="state-summary"><span>시작 골드 <strong>{game.gold.toLocaleString()} G</strong></span><span>보관 전력 <strong>{game.power.toLocaleString()}</strong></span></div><Button size="lg" onClick={startGame}>{hasSavedGame ? "이어하기" : "게임 시작"}</Button>{hasSavedGame && <Button variant="outline" onClick={() => resetGame(true)}>새 게임으로 시작</Button>}</div></section>}
       {game.phase === "GAME_OVER" && <section className="state-overlay game-over-overlay" role="dialog" aria-modal="true" aria-labelledby="game-over-title"><div className="state-card"><small>POWER FAILURE</small><h1 id="game-over-title">GAME OVER</h1><p>보관 전력이 0이 되어 공장 전체가 정지했습니다.</p><div className="state-summary"><span>최종 골드 <strong>{game.gold.toLocaleString()} G</strong></span><span>해금 구역 <strong>{game.unlockedChunks.length}</strong></span><span>설치 건물 <strong>{game.buildings.length}</strong></span></div><Button size="lg" onClick={() => resetGame(true)}>다시 하기</Button></div></section>}
-      {buildOpen && <aside className="panel build-panel"><PanelHead eyebrow="건설 카탈로그" title="생산 설비" close={() => setBuildOpen(false)} />{(["채굴", "가공", "물류", "전력"] as const).map((category) => <div className="build-group" key={category}><h3>{category}</h3>{Object.values(BUILDINGS).filter((b) => b.category === category && b.type !== "core").map((b) => <div className="build-entry" key={b.type}><button className={`build-card ${selectedBuilding === b.type ? "chosen" : ""}`} onClick={() => { setSelectedBuilding(b.type); setBeltMode(false); setBuildOpen(false); setGame((state) => ({ ...state, message: `${b.name} 배치 중 · 마우스를 움직여 위치를 선택하세요.` })); }}><span className="mini-glyph" style={buildingSpriteStyle(b.type)}>{b.glyph}</span><span><strong>{b.name}</strong><small>{b.description}</small></span><em>{b.cost} G</em></button>{RECIPES[b.type].length ? <details className="recipe-guide"><summary>조합법 {RECIPES[b.type].length}개 보기</summary><div>{RECIPES[b.type].map((recipe) => <RecipeFormula recipe={recipe} key={recipe.id} />)}</div></details> : <p className="recipe-none">고정 기능 · 조합법 없음</p>}</div>)}</div>)}</aside>}
+      {buildOpen && <aside className="panel build-panel"><PanelHead eyebrow="건설 카탈로그" title="생산 설비" close={() => setBuildOpen(false)} />{(["채굴", "재배", "가공", "물류", "전력"] as const).map((category) => <div className="build-group" key={category}><h3>{category}</h3>{Object.values(BUILDINGS).filter((b) => b.category === category && b.type !== "core").map((b) => <div className="build-entry" key={b.type}><button className={`build-card ${selectedBuilding === b.type ? "chosen" : ""}`} onClick={() => { setSelectedBuilding(b.type); setBeltMode(false); setBuildOpen(false); setGame((state) => ({ ...state, message: `${b.name} 배치 중 · 마우스를 움직여 위치를 선택하세요.` })); }}><span className="mini-glyph" style={buildingSpriteStyle(b.type)}>{b.glyph}</span><span><strong>{b.name}</strong><small>{b.description}</small></span><em>{b.cost} G</em></button>{RECIPES[b.type].length ? <details className="recipe-guide"><summary>조합법 {RECIPES[b.type].length}개 보기</summary><div>{RECIPES[b.type].map((recipe) => <RecipeFormula recipe={recipe} key={recipe.id} />)}</div></details> : <p className="recipe-none">고정 기능 · 조합법 없음</p>}</div>)}</div>)}</aside>}
       {selected && <aside className="panel inspector"><PanelHead eyebrow="설비 관리" title={BUILDINGS[selected.type].name} close={() => setSelectedId(null)} /><div className="power-state"><Power /><span><strong>{selected.active ? "정상 가동" : "가동 중지"}</strong><small>작동 시 틱당 {BUILDINGS[selected.type].power} 전력</small></span></div>{RECIPES[selected.type].length > 0 && <label className="field-label">제작법<select value={selected.recipeId} onChange={(e) => changeRecipe(e.target.value)}>{RECIPES[selected.type].map((r) => <option value={r.id} key={r.id}>{r.name}</option>)}</select></label>}{selectedRecipe && <section className="selected-recipe"><small>현재 조합법</small><RecipeFormula recipe={selectedRecipe} /></section>}{selected.type === "outputter" && <label className="field-label">출력 아이템<select value={selected.selectedOutput ?? 103} onChange={(e) => updateBuilding({ selectedOutput: Number(e.target.value) as AnyItemId })}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}{selected.type === "core" && <section className="core-output-settings"><h3>출력 포트별 아이템</h3>{["우측 상단", "우측 위", "우측 중앙", "우측 아래", "우측 하단", "하단 중앙"].map((label, index) => <label key={label}><span>{index + 1}. {label}</span><select value={selected.outputSelections?.[index] ?? 103} onChange={(event) => updateCoreOutput(index, Number(event.target.value) as AnyItemId)}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>)}</section>}<div className="inventory-grid"><InventoryList title={`입력 보관 · ${inputSlotLimit(selected) === Infinity ? "무제한" : `${inputSlotLimit(selected)}종`}`} inventory={selected.input} onReturn={selected.type === "core" ? undefined : (item) => returnInventoryItem("input", item)} /><InventoryList title="출력 보관 · 1종" inventory={selected.output} onReturn={selected.type === "core" ? undefined : (item) => returnInventoryItem("output", item)} /></div>{selected.type === "core" && <InventoryList title="코어 통합 보관함" inventory={game.core} />}{selected.type !== "core" && <div className="inspector-actions"><Button variant="outline" onClick={beginMove}><Move /> 이동</Button><Button variant="destructive" onClick={removeBuilding}><Trash2 /> 철거</Button></div>}</aside>}
       {marketOpen && <aside className="panel market-panel"><PanelHead eyebrow="광구 거래소" title="판매 스테이지" close={() => setMarketOpen(false)} /><label className="field-label">판매 아이템<select value={saleItem} onChange={(e) => setSaleItem(Number(e.target.value) as AnyItemId)}>{SELLABLE_IDS.map((id) => <option value={id} key={id}>{ALL_ITEMS[id].name} · 보유 {inventoryCount(game.core, id)}개 · {ALL_ITEMS[id].sellPrice} G</option>)}</select></label><div className="stock-line"><span>현재 보유량</span><strong>{inventoryCount(game.core, saleItem).toLocaleString()}개</strong></div><label className="field-label">수량<div className="quantity-row"><Input min={1} step={1} type="number" value={saleQuantity} onChange={(e) => setSaleQuantity(e.target.value === "" ? "" : Number(e.target.value))} /><Button variant="outline" onClick={selectAllCurrent}>전량 선택</Button></div></label><div className="market-actions"><Button onClick={stageSale}>선택 수량 올리기</Button><Button variant="outline" onClick={stageAllSellable}>전체 재고 올리기</Button></div><div className="sale-stage">{game.stagedSales.length === 0 ? <p>판매할 아이템을 선택해 주세요.</p> : game.stagedSales.map((line, index) => <div key={`${line.item}-${index}`}><span>{ALL_ITEMS[line.item].name}</span><strong>{line.quantity}개</strong><em>{((ALL_ITEMS[line.item].sellPrice ?? 0) * line.quantity).toLocaleString()} G</em></div>)}</div><div className="sale-total"><span>예상 수익</span><strong>{totalStaged.toLocaleString()} G</strong></div><Button disabled={!game.stagedSales.length} onClick={confirmSale} className="w-full sell-button"><Coins /> 판매 확정</Button></aside>}
       {pendingChunk && <aside className="chunk-dialog"><small>미개척 구역</small><h2>청크 [{pendingChunk.x}, {pendingChunk.y}]</h2><p>새 광맥과 건설 공간을 조사합니다. 인접 청크만 해금할 수 있습니다.</p><strong>{chunkPrice(game.unlockedChunks.length - 1).toLocaleString()} GOLD</strong><div><Button variant="outline" onClick={() => setPendingChunk(null)}>취소</Button><Button onClick={buyChunk}>구역 해금</Button></div></aside>}
-      {helpOpen && <aside className="help-dialog"><PanelHead eyebrow="운영 매뉴얼" title="조작 방법" close={() => setHelpOpen(false)} /><div className="help-grid"><kbd>W A S D</kbd><span>카메라 이동</span><kbd>좌클릭</kbd><span>설치 및 결정</span><kbd>우클릭</kbd><span>설비 관리 / 광맥 직접 채굴</span><kbd>Q / E / Space</kbd><span>건물 / 벨트 / 판매소</span><kbd>연속 클릭</kbd><span>벨트 직선·ㄱ자 자동 연결</span><kbd>R</kbd><span>다음 벨트 기본 출력 방향 회전</span><kbd>휠</kbd><span>지도 확대·축소</span><kbd>터치</kbd><span>드래그 이동 / 길게 눌러 관리·채굴</span></div><p>청록색 입력 포트와 주황색 출력 포트를 맞춰 생산 라인을 구성하세요. 채굴기는 3×3 광맥에 자동으로 정렬되며 2초마다 자원을 생산합니다.</p></aside>}
+      {helpOpen && <aside className="help-dialog"><PanelHead eyebrow="운영 매뉴얼" title="조작 방법" close={() => setHelpOpen(false)} /><div className="help-grid"><kbd>W A S D</kbd><span>카메라 이동</span><kbd>좌클릭</kbd><span>설치 및 결정</span><kbd>우클릭</kbd><span>설비 관리 / 광맥 직접 채굴</span><kbd>Q / E / Space</kbd><span>건물 / 벨트 / 판매소</span><kbd>연속 클릭</kbd><span>일반 벨트 직선·ㄱ자 자동 연결</span><kbd>F</kbd><span>일반 / 교차 / 분배 / 합류 벨트 변경</span><kbd>R</kbd><span>다음 벨트 출력 방향 회전</span><kbd>휠</kbd><span>지도 확대·축소</span><kbd>터치</kbd><span>드래그 이동 / 길게 눌러 관리·채굴</span></div><p>교차 벨트는 표시 방향과 시계 방향의 두 흐름을 독립 운송합니다. 분배 벨트는 표시 방향과 시계 방향 출구를 번갈아 사용하고, 합류 벨트는 여러 입력을 표시 방향 하나로 보냅니다.</p></aside>}
       {commandOpen && <aside className="command-console" role="dialog" aria-modal="true" aria-label="커맨드 입력"><form onSubmit={submitCommand}><PanelHead eyebrow="FOUNDRY SYSTEM" title="커맨드 입력" close={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }} /><p>승인된 시스템 코드를 입력하세요.</p><label className="field-label" htmlFor="command-code">COMMAND CODE<Input id="command-code" autoFocus autoComplete="off" spellCheck={false} value={commandInput} onChange={(event) => { setCommandInput(event.target.value); setCommandFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); executeCommand(); } else if (event.key === "Escape") { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); } }} placeholder="코드 입력" /></label>{commandFeedback && <p className="command-feedback" role="alert">{commandFeedback}</p>}<div className="command-actions"><Button type="button" variant="outline" onClick={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }}>취소</Button><Button type="button" onClick={executeCommand}>실행</Button></div></form></aside>}
     </section>
   </main>;
@@ -390,5 +434,5 @@ function BuildingPorts({ type }: { type: BuildingType }) {
   </span>;
 }
 function PanelHead({ eyebrow, title, close }: { eyebrow: string; title: string; close: () => void }) { return <div className="panel-head"><span><small>{eyebrow}</small><h2>{title}</h2></span><Button size="icon-sm" variant="ghost" onClick={close} aria-label="닫기"><X /></Button></div>; }
-function RecipeFormula({ recipe }: { recipe: Recipe }) { const inputText = Object.entries(recipe.inputs).map(([id, amount]) => `${ALL_ITEMS[Number(id) as AnyItemId].short} ${amount ?? 0}개`).join(" + "); const outputText = `${ALL_ITEMS[recipe.output].short} ${recipe.amount}개`; return <div className="recipe-formula" title={`${inputText} → ${outputText}`}><span>{inputText}</span><b>→</b><strong>{outputText}</strong></div>; }
+function RecipeFormula({ recipe }: { recipe: Recipe }) { const inputText = Object.entries(recipe.inputs).map(([id, amount]) => `${ALL_ITEMS[Number(id) as AnyItemId].short} ${amount ?? 0}개`).join(" + "); const duration = (recipe.durationTicks ?? 1) * TICK_MS / 1000; const outputText = `${ALL_ITEMS[recipe.output].short} ${recipe.amount}개 · ${duration}초`; return <div className="recipe-formula" title={`${inputText} → ${outputText}`}><span>{inputText}</span><b>→</b><strong>{outputText}</strong></div>; }
 function InventoryList({ title, inventory, onReturn }: { title: string; inventory: Inventory; onReturn?: (item: AnyItemId) => void }) { const entries = Object.entries(inventory).filter(([, amount]) => (amount ?? 0) > 0); return <section className="inventory-list"><h3>{title}</h3>{entries.length === 0 ? <p>비어 있음</p> : entries.map(([id, amount]) => { const itemId = Number(id) as AnyItemId; const item = ALL_ITEMS[itemId]; return <div key={id} className={onReturn ? "returnable" : undefined}><i className="item-sprite" style={itemSpriteStyle(itemId)} title={item.name} /><span title={item.name}>{item.short}</span><strong>{amount}</strong>{onReturn && <Button size="sm" variant="ghost" onClick={() => onReturn(itemId)}>코어로 회수</Button>}<Progress value={Math.min(100, ((amount ?? 0) / BUFFER_LIMIT) * 100)} /></div>; })}</section>; }

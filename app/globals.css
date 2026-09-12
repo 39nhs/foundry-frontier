@@ -121,8 +121,23 @@ button { color: inherit; }
 .belt-corner-left-down > span { transform: scaleX(-1); }
 .belt-corner-down-right > span { transform: matrix(0, 1, 1, 0, 0, 0); }
 .belt-corner-up-left > span { transform: matrix(0, -1, -1, 0, 0, 0); }
+.belt-kind-cross > span, .belt-kind-splitter > span, .belt-kind-merger > span {
+  background-position: center;
+  background-size: 112% 112%;
+  filter: saturate(.82) brightness(.88);
+}
+.belt-kind-cross > span { background-image: url("/assets/conveyor-crossing.png"); }
+.belt-kind-splitter > span { background-image: url("/assets/conveyor-splitter.png"); }
+.belt-kind-merger > span { background-image: url("/assets/conveyor-merger.png"); }
+.belt-kind-cross, .belt-kind-splitter, .belt-kind-merger { border-color: #8c7449; background: #11191ae6; }
+.belt-kind-cross.belt-direction-right > span, .belt-kind-splitter.belt-direction-right > span, .belt-kind-merger.belt-direction-right > span { transform: rotate(0); }
+.belt-kind-cross.belt-direction-down > span, .belt-kind-splitter.belt-direction-down > span, .belt-kind-merger.belt-direction-down > span { transform: rotate(90deg); }
+.belt-kind-cross.belt-direction-left > span, .belt-kind-splitter.belt-direction-left > span, .belt-kind-merger.belt-direction-left > span { transform: rotate(180deg); }
+.belt-kind-cross.belt-direction-up > span, .belt-kind-splitter.belt-direction-up > span, .belt-kind-merger.belt-direction-up > span { transform: rotate(-90deg); }
 .item-sprite { display: block; background-image: url("/assets/items-atlas.png"); background-repeat: no-repeat; background-size: 600% 300%; }
 .belt i.item-sprite { position: absolute; z-index: 2; width: 17px; height: 17px; filter: drop-shadow(0 0 5px #fff6); }
+.belt-kind-cross .belt-item-primary { transform: translate(-6px, -6px); }
+.belt-kind-cross .belt-item-secondary { transform: translate(6px, 6px); }
 .building { position: absolute; z-index: 10; border: 2px solid #4c5e62; background: linear-gradient(135deg, #283437ed, #111719ed); box-shadow: inset 0 0 0 5px #0b1011a8, 0 8px 18px #0009; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; overflow: hidden; }
 .building::before, .building::after { content: ""; position: absolute; background: #63747755; }
 .building::before { width: 70%; height: 3px; top: 12px; }
@@ -131,6 +146,9 @@ button { color: inherit; }
 .building-core { border-color: #d59637; background: radial-gradient(circle at 50% 30%, #6c4c1d, #1d2527 55%, #0f1516); }
 .building-miner, .building-advancedMiner { background: radial-gradient(circle at 50% 45%, #5c4124, #1a2224 58%); }
 .building-generator { background: radial-gradient(circle, #174d4c, #172022 60%); }
+.building-seedExtractor { border-color: #a9834f; background: radial-gradient(circle at 50% 45%, #675331, #1a2420 60%); }
+.building-cultivator { border-color: #628d62; background: radial-gradient(circle at 50% 55%, #345d42, #16221d 62%); }
+.building-bioprocessor { border-color: #57958e; background: radial-gradient(circle at 50% 45%, #28645d, #162224 62%); }
 .building.offline { filter: grayscale(.9) brightness(.62); border-color: #9b4a40; }
 .ports { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .port { position: absolute; width: 10px; height: 14px; transform: translateY(-50%); border: 2px solid #0b1011; box-shadow: 0 0 7px currentColor; }
@@ -148,7 +166,7 @@ button { color: inherit; }
 .building small { position: relative; z-index: 1; color: #82d8d2; font: 10px var(--font-mono); }
 .crosshair { pointer-events: none; position: absolute; z-index: 8; left: 50%; top: 50%; width: 16px; height: 16px; border: 1px solid #78d9d37a; transform: translate(-50%, -50%); }
 .coordinates { position: absolute; right: 16px; bottom: 16px; z-index: 20; padding: 7px 10px; color: #9ca9ab; background: #0a0d0ed9; border: 1px solid #39474a; font: 11px var(--font-mono); }
-.command-dock { position: absolute; z-index: 25; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; gap: 7px; padding: 8px; border: 1px solid #455457; background: #0e1415eb; box-shadow: 0 10px 30px #000b; backdrop-filter: blur(12px); }
+.command-dock { position: absolute; z-index: 25; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; padding: 8px; border: 1px solid #455457; background: #0e1415eb; box-shadow: 0 10px 30px #000b; backdrop-filter: blur(12px); }
 .command-dock button.active { color: #161006; background: #efa638; }
 kbd { display: inline-grid; place-items: center; min-width: 20px; min-height: 20px; padding: 1px 5px; color: #aeb9ba; background: #0b1011; border: 1px solid #435154; border-bottom-width: 2px; border-radius: 3px; font: 10px var(--font-mono); }
 .status-line { position: absolute; left: 16px; bottom: 16px; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: #c7d1d1; background: #0b1011e8; border-left: 2px solid #67d9d1; font-size: 12px; }
