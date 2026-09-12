@@ -33,10 +33,14 @@ const defaultCoreOutputs = (): Partial<Record<number, AnyItemId>> => Object.from
 const coreBuilding = (): PlacedBuilding => ({ id: "core", type: "core", x: CORE_START_TILE, y: CORE_START_TILE, outputSelections: defaultCoreOutputs(), input: {}, output: {}, active: true });
 const initialGame = (phase: GamePhase = "READY"): GameState => ({ dataVersion: DATA_VERSION, phase, chunkSize: CHUNK_SIZE, worldSeed: createWorldSeed(), gold: 1000, power: 10000, powerCapacity: 10000, tick: 0, lastPowerProduced: 200, lastPowerUsed: 0, lastPowerDelta: 200, unlockedChunks: ["0,0"], buildings: [coreBuilding()], belts: [], core: { ...STARTER_SEEDS }, stagedSales: [], message: "광맥이 없는 시작 광구입니다. 지급된 씨앗으로 재배망을 만들거나 주변을 탐사하세요." });
 const BUILDING_SPRITE: Record<BuildingType, [number, number]> = { core: [0, 0], miner: [25, 0], advancedMiner: [50, 0], outputter: [75, 0], refinery: [100, 0], crusher: [0, 100], parts: [25, 100], synthesizer: [50, 100], generator: [75, 100], inputter: [100, 100], seedExtractor: [0, 100], cultivator: [75, 0], bioprocessor: [50, 100] };
+const BUILDING_IMAGE: Partial<Record<BuildingType, string>> = { seedExtractor: "/assets/building-seed-extractor.png", cultivator: "/assets/building-cultivator.png", bioprocessor: "/assets/building-bioprocessor.png" };
 const ITEM_SPRITES: AnyItemId[] = [101, 102, 103, 201, 202, 203, 301, 302, 303, 401, 402, 403, 501, 502, 503, 601, 602, 603];
 const ITEM_SPRITE_SOURCE: Partial<Record<AnyItemId, AnyItemId>> = { 604: 601, 701: 101, 702: 102, 703: 103, 711: 201, 712: 202, 713: 203, 721: 301, 722: 302, 723: 303, 801: 403, 802: 401, 803: 402, 804: 403, 901: 501, 902: 502, 903: 503 };
-const buildingSpriteStyle = (type: BuildingType): CSSProperties => ({ backgroundPosition: `${BUILDING_SPRITE[type][0]}% ${BUILDING_SPRITE[type][1]}%` });
-const itemSpriteStyle = (id: AnyItemId): CSSProperties => { const index = ITEM_SPRITES.indexOf(ITEM_SPRITE_SOURCE[id] ?? id); return { backgroundPosition: `${(index % 6) * 20}% ${Math.floor(index / 6) * 50}%` }; };
+const ITEM_IMAGE: Partial<Record<AnyItemId, string>> = { 711: "/assets/plant-sunspore.png", 712: "/assets/plant-ironreed.png", 713: "/assets/plant-frostmoss.png" };
+const buildingSpriteStyle = (type: BuildingType): CSSProperties => BUILDING_IMAGE[type]
+  ? { backgroundImage: `url("${BUILDING_IMAGE[type]}")`, backgroundPosition: "center", backgroundSize: "contain" }
+  : { backgroundPosition: `${BUILDING_SPRITE[type][0]}% ${BUILDING_SPRITE[type][1]}%` };
+const itemSpriteStyle = (id: AnyItemId): CSSProperties => { const image = ITEM_IMAGE[id]; if (image) return { backgroundImage: `url("${image}")`, backgroundPosition: "center", backgroundSize: "contain" }; const index = ITEM_SPRITES.indexOf(ITEM_SPRITE_SOURCE[id] ?? id); return { backgroundPosition: `${(index % 6) * 20}% ${Math.floor(index / 6) * 50}%` }; };
 const chunkLocal = (value: number) => ((value % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
 const migrateTileCoordinate = (value: number, previousChunkSize: number) => {
   const chunk = Math.floor(value / previousChunkSize);
