@@ -152,17 +152,17 @@ export interface BuildingDefinition {
 
 export const BUILDINGS: Record<BuildingType, BuildingDefinition> = {
   core: { type: "core", name: "코어", category: "물류", cost: 0, power: 0, size: 5, inputPorts: 6, outputPorts: 6, description: "모든 자원과 전력을 관리합니다.", glyph: "◆" },
-  miner: { type: "miner", name: "채굴기", category: "채굴", cost: 20, power: 10, size: 3, inputPorts: 3, outputPorts: 3, description: "2·3티어 광맥을 1틱마다 채굴합니다.", glyph: "M" },
-  advancedMiner: { type: "advancedMiner", name: "고급 채굴기", category: "채굴", cost: 75, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "모든 티어 광맥을 1틱마다 채굴합니다.", glyph: "A" },
+  miner: { type: "miner", name: "채굴기", category: "채굴", cost: 20, power: 10, size: 3, inputPorts: 3, outputPorts: 3, description: "2·3티어 광맥을 2초마다 채굴합니다.", glyph: "M" },
+  advancedMiner: { type: "advancedMiner", name: "고급 채굴기", category: "채굴", cost: 75, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "모든 티어 광맥을 2초마다 채굴합니다.", glyph: "A" },
   outputter: { type: "outputter", name: "출력기", category: "물류", cost: 25, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "코어의 지정 아이템을 벨트로 보냅니다.", glyph: "O" },
   refinery: { type: "refinery", name: "정제기", category: "가공", cost: 10, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "광물을 정제합니다.", glyph: "R" },
   crusher: { type: "crusher", name: "분쇄기", category: "가공", cost: 10, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "광물을 분쇄합니다.", glyph: "C" },
   parts: { type: "parts", name: "부품 가공기", category: "가공", cost: 25, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "가공된 광물을 부품으로 만듭니다.", glyph: "P" },
   synthesizer: { type: "synthesizer", name: "합성기", category: "가공", cost: 100, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "가공물과 부품으로 배터리를 만듭니다.", glyph: "S" },
-  generator: { type: "generator", name: "전기 생성기", category: "전력", cost: 125, power: 0, size: 3, inputPorts: 3, outputPorts: 3, description: "5틱마다 배터리를 전력으로 변환합니다.", glyph: "G" },
-  inputter: { type: "inputter", name: "입력기", category: "물류", cost: 50, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "5틱마다 보관 아이템을 코어로 전송합니다.", glyph: "I" },
+  generator: { type: "generator", name: "전기 생성기", category: "전력", cost: 125, power: 0, size: 3, inputPorts: 3, outputPorts: 3, description: "10초마다 배터리를 전력으로 변환합니다.", glyph: "G" },
+  inputter: { type: "inputter", name: "입력기", category: "물류", cost: 50, power: 50, size: 3, inputPorts: 3, outputPorts: 3, description: "10초마다 보관 아이템을 코어로 전송합니다.", glyph: "I" },
   seedExtractor: { type: "seedExtractor", name: "채종기", category: "재배", cost: 35, power: 10, size: 3, inputPorts: 3, outputPorts: 3, description: "식물 1개에서 씨앗 2개를 분리합니다.", glyph: "D" },
-  cultivator: { type: "cultivator", name: "재배기", category: "재배", cost: 45, power: 20, size: 3, inputPorts: 3, outputPorts: 3, description: "씨앗을 3틱 동안 길러 식물로 만듭니다.", glyph: "V" },
+  cultivator: { type: "cultivator", name: "재배기", category: "재배", cost: 45, power: 20, size: 3, inputPorts: 3, outputPorts: 3, description: "씨앗을 6초 동안 길러 식물로 만듭니다.", glyph: "V" },
   bioprocessor: { type: "bioprocessor", name: "생물 가공기", category: "재배", cost: 70, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "식물을 추출·탄화하고 복합 소재를 만듭니다.", glyph: "B" },
 };
 
