@@ -181,7 +181,7 @@ export const BUFFER_LIMIT = 50;
 const ORE_SIZE = 3;
 const ORE_ANCHOR_RANGE = CHUNK_SIZE - ORE_SIZE + 1;
 const SECOND_ORE_OFFSET = Math.floor(ORE_ANCHOR_RANGE / 2);
-const WILD_PLANT_IDS = [711, 712, 713] as const;
+const WILD_PLANT_BY_TIER = { 1: 711, 2: 712, 3: 713 } as const;
 
 export function chunkPrice(purchases: number) {
   const n = purchases + 1;
@@ -239,18 +239,16 @@ export function plantsForChunk(cx: number, cy: number, worldSeed = 0) {
     for (let y = coreStart; y < coreStart + BUILDINGS.core.size; y += 1) for (let x = coreStart; x < coreStart + BUILDINGS.core.size; x += 1) occupied.add(`${x},${y}`);
   }
 
-  return WILD_PLANT_IDS.flatMap((item, index) => {
-    if (hashNumber(cx, cy, (151 + index * 17) ^ worldSeed) % 100 >= 10) return [];
-    const firstCell = hashNumber(cx, cy, (211 + index * 29) ^ worldSeed) % (CHUNK_SIZE * CHUNK_SIZE);
-    for (let offset = 0; offset < CHUNK_SIZE * CHUNK_SIZE; offset += 1) {
-      const cell = (firstCell + offset) % (CHUNK_SIZE * CHUNK_SIZE);
-      const x = cx * CHUNK_SIZE + cell % CHUNK_SIZE;
-      const y = cy * CHUNK_SIZE + Math.floor(cell / CHUNK_SIZE);
-      const key = `${x},${y}`;
-      if (occupied.has(key)) continue;
-      occupied.add(key);
-      return [{ x, y, item }];
-    }
-    return [];
-  });
+  const tier = oreTierForChunk(cx, cy);
+  if (hashNumber(cx, cy, 151 ^ worldSeed) % 100 >= 10) return [];
+  const item = WILD_PLANT_BY_TIER[tier];
+  const firstCell = hashNumber(cx, cy, 211 ^ worldSeed) % (CHUNK_SIZE * CHUNK_SIZE);
+  for (let offset = 0; offset < CHUNK_SIZE * CHUNK_SIZE; offset += 1) {
+    const cell = (firstCell + offset) % (CHUNK_SIZE * CHUNK_SIZE);
+    const x = cx * CHUNK_SIZE + cell % CHUNK_SIZE;
+    const y = cy * CHUNK_SIZE + Math.floor(cell / CHUNK_SIZE);
+    if (occupied.has(`${x},${y}`)) continue;
+    return [{ x, y, item }];
+  }
+  return [];
 }
