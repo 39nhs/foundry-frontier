@@ -44,3 +44,9 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+
+# Local presentation drafts; only the finalized v4 deck is committed.
+/.presentation-output/Foundry-Frontier-발표자료.pptx
+/.presentation-output/Foundry-Frontier-개발과정-발표자료.pptx
+/.presentation-output/Foundry-Frontier-개발과정-발표자료-v2.pptx
+/.presentation-output/Foundry-Frontier-개발과정-발표자료-v3.pptx
