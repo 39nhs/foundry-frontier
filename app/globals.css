@@ -107,31 +107,20 @@ button { color: inherit; }
 .belt-direction-right > span { background-position: 50% 0; }
 .belt-direction-down > span { background-position: 100% 0; }
 .belt-direction-left > span { background-position: 0 100%; }
-.belt[class*="belt-corner-"] > span { background-image: none; }
-.belt[class*="belt-corner-"] > span::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-color: #8a9697;
-  border: 4px solid #252e30;
-  border-radius: 12px;
-  box-shadow: inset 0 0 0 3px #3c4749, 0 2px 6px #0009;
+.belt[class*="belt-corner-"] > span {
+  background-image: url("/assets/conveyor-corner-left-to-down.png");
+  background-position: center;
+  background-size: 100% 100%;
+  filter: saturate(.82) brightness(.9);
 }
-.belt[class*="belt-corner-"] > span::after {
-  content: attr(data-arrow);
-  position: absolute;
-  z-index: 1;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  color: #e7eceb;
-  font: 900 20px/1 var(--font-mono);
-  text-shadow: 0 2px 2px #000;
-}
-.belt-corner-right-down > span::before, .belt-corner-up-left > span::before { clip-path: polygon(0 30%, 70% 30%, 70% 100%, 30% 100%, 30% 70%, 0 70%); }
-.belt-corner-right-up > span::before, .belt-corner-down-left > span::before { clip-path: polygon(0 30%, 30% 30%, 30% 0, 70% 0, 70% 70%, 0 70%); }
-.belt-corner-left-down > span::before, .belt-corner-up-right > span::before { clip-path: polygon(30% 30%, 100% 30%, 100% 70%, 70% 70%, 70% 100%, 30% 100%); }
-.belt-corner-left-up > span::before, .belt-corner-down-right > span::before { clip-path: polygon(30% 0, 70% 0, 70% 30%, 100% 30%, 100% 70%, 30% 70%); }
+.belt-corner-right-down > span { transform: none; }
+.belt-corner-down-left > span { transform: rotate(90deg); }
+.belt-corner-left-up > span { transform: rotate(180deg); }
+.belt-corner-up-right > span { transform: rotate(-90deg); }
+.belt-corner-right-up > span { transform: scaleY(-1); }
+.belt-corner-left-down > span { transform: scaleX(-1); }
+.belt-corner-down-right > span { transform: matrix(0, 1, 1, 0, 0, 0); }
+.belt-corner-up-left > span { transform: matrix(0, -1, -1, 0, 0, 0); }
 .item-sprite { display: block; background-image: url("/assets/items-atlas.png"); background-repeat: no-repeat; background-size: 600% 300%; }
 .belt i.item-sprite { position: absolute; z-index: 2; width: 17px; height: 17px; filter: drop-shadow(0 0 5px #fff6); }
 .building { position: absolute; z-index: 10; border: 2px solid #4c5e62; background: linear-gradient(135deg, #283437ed, #111719ed); box-shadow: inset 0 0 0 5px #0b1011a8, 0 8px 18px #0009; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; overflow: hidden; }
