@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 // Node 22는 테스트 실행 시 TypeScript 확장자를 직접 제거해 처리합니다.
 // @ts-expect-error 실행기에는 .ts 확장자가 필요하며 애플리케이션 빌드는 이를 번들링합니다.
-import { ALL_ITEMS, POWER_SETTLEMENT_TICKS, RECIPES, SELLABLE_IDS, TOTAL_CHUNKS, chunkPrice, isMapComplete, oresForChunk, orthogonalTilePath, plantsForChunk, shouldSettlePower } from "../app/game-data.ts";
+import { ALL_ITEMS, BUILDINGS, POWER_SETTLEMENT_TICKS, RECIPES, SELLABLE_IDS, TOTAL_CHUNKS, chunkPrice, isMapComplete, oresForChunk, orthogonalTilePath, plantsForChunk, shouldSettlePower } from "../app/game-data.ts";
 
 test("시작·인접·일반 청크의 광맥 생성 규칙", () => {
   for (let seed = 0; seed < 500; seed += 1) {
@@ -55,6 +55,13 @@ test("청크 가격은 구매 순서에 따라 증가", () => {
 test("전력은 5틱마다 정산", () => {
   assert.equal(POWER_SETTLEMENT_TICKS, 5);
   for (let tick = 1; tick <= 20; tick += 1) assert.equal(shouldSettlePower(tick), tick % 5 === 0);
+});
+
+test("채굴기는 벨트 입출력 포트를 사용하지 않음", () => {
+  assert.equal(BUILDINGS.miner.inputPorts, 0);
+  assert.equal(BUILDINGS.miner.outputPorts, 0);
+  assert.equal(BUILDINGS.advancedMiner.inputPorts, 0);
+  assert.equal(BUILDINGS.advancedMiner.outputPorts, 0);
 });
 
 test("31×31 청크를 모두 열면 맵 개척 완료", () => {

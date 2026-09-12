@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import { Box, Coins, Factory, Gauge, Hammer, HelpCircle, Map, Move, Power, RotateCw, ShoppingCart, Trash2, Volume2, VolumeX, X, Zap } from "lucide-react";
+import { Box, Check, Coins, Factory, Gauge, Hammer, HelpCircle, Map, Move, Power, RotateCw, ShoppingCart, Trash2, Volume2, VolumeX, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -14,6 +14,7 @@ type BeltKind = "normal" | "cross" | "splitter" | "merger";
 type GiveCommand = { kind: "gold"; amount: number } | { kind: "all" };
 interface PlacedBuilding { id: string; type: BuildingType; x: number; y: number; recipeId?: string; selectedOutput?: AnyItemId; outputSelections?: Partial<Record<number, AnyItemId>>; input: Inventory; output: Inventory; active: boolean }
 interface Belt { x: number; y: number; direction: Direction; kind?: BeltKind; item?: AnyItemId; secondaryItem?: AnyItemId; splitIndex?: 0 | 1 }
+interface BeltPlanTile { x: number; y: number; direction: Direction }
 interface SaleLine { item: AnyItemId; quantity: number }
 interface GameState { dataVersion: number; phase: GamePhase; chunkSize: number; worldSeed: number; gold: number; power: number; powerCapacity: number; tick: number; pendingPowerUsed: number; lastPowerProduced: number; lastPowerUsed: number; lastPowerDelta: number; unlockedChunks: string[]; mapCompletionAcknowledged: boolean; harvestedPlants: string[]; buildings: PlacedBuilding[]; belts: Belt[]; core: Inventory; stagedSales: SaleLine[]; message: string }
 
@@ -76,11 +77,13 @@ export function applyGiveCommand(state: GameState, command: GiveCommand): GameSt
 }
 function inputSlotLimit(building: PlacedBuilding) {
   if (building.type === "core") return Infinity;
+  if (BUILDINGS[building.type].inputPorts === 0) return 0;
   if (building.type === "inputter") return 6;
   const recipe = RECIPES[building.type].find((candidate) => candidate.id === building.recipeId);
   return Math.max(1, recipe ? Object.keys(recipe.inputs).length : 1);
 }
 function canAcceptInput(building: PlacedBuilding, item: AnyItemId) {
+  if (BUILDINGS[building.type].inputPorts === 0) return false;
   const inventory = building.type === "core" ? undefined : building.input;
   if (!inventory) return true;
   if (inventoryCount(inventory, item) >= BUFFER_LIMIT) return false;
@@ -94,12 +97,14 @@ function buildingAt(buildings: PlacedBuilding[], x: number, y: number, ignoreId?
 }
 function inputPortTiles(building: PlacedBuilding) {
   const size = BUILDINGS[building.type].size;
+  if (BUILDINGS[building.type].inputPorts === 0) return [];
   const ports = Array.from({ length: size }, (_, index) => ({ x: building.x, y: building.y + index }));
   if (building.type === "core") ports.push({ x: building.x + 2, y: building.y });
   return ports;
 }
 function outputTargets(building: PlacedBuilding) {
   const size = BUILDINGS[building.type].size;
+  if (BUILDINGS[building.type].outputPorts === 0) return [];
   const ports = Array.from({ length: size }, (_, index) => ({ x: building.x + size, y: building.y + index }));
   if (building.type === "core") ports.push({ x: building.x + 2, y: building.y + size });
   return ports;
@@ -283,12 +288,13 @@ export default function Home() {
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false); const [commandInput, setCommandInput] = useState(""); const [commandFeedback, setCommandFeedback] = useState("");
-  const [buildOpen, setBuildOpen] = useState(false); const [marketOpen, setMarketOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [selectedBuilding, setSelectedBuilding] = useState<BuildingType | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null); const [beltMode, setBeltMode] = useState(false); const [beltDirection, setBeltDirection] = useState<Direction>("right"); const [beltKind, setBeltKind] = useState<BeltKind>("normal"); const [movingId, setMovingId] = useState<string | null>(null); const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null); const [pendingChunk, setPendingChunk] = useState<{ x: number; y: number } | null>(null); const [saleItem, setSaleItem] = useState<AnyItemId>(603); const [saleQuantity, setSaleQuantity] = useState<number | "">(1);
+  const [buildOpen, setBuildOpen] = useState(false); const [marketOpen, setMarketOpen] = useState(false); const [helpOpen, setHelpOpen] = useState(false); const [selectedBuilding, setSelectedBuilding] = useState<BuildingType | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null); const [beltMode, setBeltMode] = useState(false); const [beltDirection, setBeltDirection] = useState<Direction>("right"); const [beltKind, setBeltKind] = useState<BeltKind>("normal"); const [beltEraseMode, setBeltEraseMode] = useState(false); const [beltPreview, setBeltPreview] = useState<BeltPlanTile[]>([]); const [beltRemovePreview, setBeltRemovePreview] = useState<BeltPlanTile[]>([]); const [pendingBeltPlan, setPendingBeltPlan] = useState<BeltPlanTile[] | null>(null); const [pendingBeltRemoval, setPendingBeltRemoval] = useState<BeltPlanTile[] | null>(null); const [movingId, setMovingId] = useState<string | null>(null); const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null); const [pendingChunk, setPendingChunk] = useState<{ x: number; y: number } | null>(null); const [saleItem, setSaleItem] = useState<AnyItemId>(603); const [saleQuantity, setSaleQuantity] = useState<number | "">(1);
   const viewportRef = useRef<HTMLDivElement>(null); const keysRef = useRef(new Set<string>()); const lastFrameRef = useRef(0);
   const enterSequenceRef = useRef<number[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null); const musicRef = useRef<HTMLAudioElement | null>(null); const assetSoundsRef = useRef<{ place: HTMLAudioElement; remove: HTMLAudioElement } | null>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; cameraX: number; cameraY: number; moved: boolean; timer: number | null; tileX?: number; tileY?: number } | null>(null);
-  const beltPaintRef = useRef<{ pointerId: number; lastX: number; lastY: number; placed: Set<string> } | null>(null);
+  const beltPaintRef = useRef<{ pointerId: number; lastX: number; lastY: number; placed: Set<string>; tiles: BeltPlanTile[] } | null>(null);
+  const beltRemoveRef = useRef<{ pointerId: number; lastX: number; lastY: number; selected: Set<string>; tiles: BeltPlanTile[] } | null>(null);
   const suppressClickUntilRef = useRef(0);
 
   const stopAmbientSound = useCallback(() => { musicRef.current?.pause(); }, []);
@@ -370,23 +376,50 @@ export default function Home() {
     const cx = Math.floor(x / CHUNK_SIZE); const cy = Math.floor(y / CHUNK_SIZE);
     return unlocked.has(chunkKey(cx, cy)) && !buildingAt(game.buildings, x, y) && !availableWildPlantAt(x, y);
   };
-  const placeBeltAt = (rawX: number, rawY: number, outgoingDirection: Direction = beltDirection) => {
+  const commitBeltPlan = (plan: BeltPlanTile[]) => {
+    if (!plan.length) return;
+    playSound("belt");
     setGame((state) => {
-      const cx = Math.floor(rawX / CHUNK_SIZE); const cy = Math.floor(rawY / CHUNK_SIZE);
-      const plant = wildPlantAt(rawX, rawY, state.worldSeed);
-      if (!state.unlockedChunks.includes(chunkKey(cx, cy)) || buildingAt(state.buildings, rawX, rawY) || (plant && !state.harvestedPlants.includes(wildPlantKey(plant)))) return state;
-      const replaced = state.belts.find((belt) => belt.x === rawX && belt.y === rawY);
-      const belts = state.belts.filter((belt) => belt.x !== rawX || belt.y !== rawY);
-      const previous = replaced ? undefined : [...belts].reverse().find((belt) => directionBetween(belt, { x: rawX, y: rawY }));
-      const connectionDirection = beltKind === "normal" && previous && beltKindOf(previous) === "normal" ? directionBetween(previous, { x: rawX, y: rawY }) : undefined;
-      const connectedBelts = connectionDirection ? belts.map((belt) => belt === previous ? { ...belt, direction: connectionDirection } : belt) : belts;
       const core = { ...state.core };
-      if (replaced?.item) addItem(core, replaced.item, 1);
-      if (replaced?.secondaryItem) addItem(core, replaced.secondaryItem, 1);
-      const direction = beltKind === "normal" ? outgoingDirection : beltDirection;
-      return { ...state, core, belts: [...connectedBelts, { x: rawX, y: rawY, direction, kind: beltKind, splitIndex: 0 }], message: connectionDirection ? `벨트 자동 연결 ${DIRECTIONS[connectionDirection].arrow}` : `${BELT_KIND_LABEL[beltKind]} 벨트 ${DIRECTIONS[direction].arrow} 설치` };
+      let belts = [...state.belts];
+      let installed = 0;
+      for (const tile of plan) {
+        const cx = Math.floor(tile.x / CHUNK_SIZE); const cy = Math.floor(tile.y / CHUNK_SIZE);
+        const plant = wildPlantAt(tile.x, tile.y, state.worldSeed);
+        if (!state.unlockedChunks.includes(chunkKey(cx, cy)) || buildingAt(state.buildings, tile.x, tile.y) || (plant && !state.harvestedPlants.includes(wildPlantKey(plant)))) continue;
+        const replaced = belts.find((belt) => belt.x === tile.x && belt.y === tile.y);
+        belts = belts.filter((belt) => belt.x !== tile.x || belt.y !== tile.y);
+        const previous = replaced ? undefined : [...belts].reverse().find((belt) => directionBetween(belt, tile));
+        const connectionDirection = beltKind === "normal" && previous && beltKindOf(previous) === "normal" ? directionBetween(previous, tile) : undefined;
+        if (connectionDirection && previous) belts = belts.map((belt) => belt === previous ? { ...belt, direction: connectionDirection } : belt);
+        if (replaced?.item) addItem(core, replaced.item, 1);
+        if (replaced?.secondaryItem) addItem(core, replaced.secondaryItem, 1);
+        belts.push({ ...tile, direction: beltKind === "normal" ? tile.direction : beltDirection, kind: beltKind, splitIndex: 0 });
+        installed += 1;
+      }
+      return installed ? { ...state, core, belts, message: `${BELT_KIND_LABEL[beltKind]} 벨트 ${installed}칸 설치 완료` } : state;
     });
   };
+  const placeBeltAt = (rawX: number, rawY: number, outgoingDirection: Direction = beltDirection) => commitBeltPlan([{ x: rawX, y: rawY, direction: outgoingDirection }]);
+  const confirmBeltPlan = () => { if (pendingBeltPlan) commitBeltPlan(pendingBeltPlan); setPendingBeltPlan(null); setBeltPreview([]); };
+  const cancelBeltPlan = () => { setPendingBeltPlan(null); setBeltPreview([]); setGame((state) => ({ ...state, message: "벨트 설치를 취소했습니다." })); };
+  const removeBeltPlan = (plan: BeltPlanTile[]) => {
+    const selectedKeys = new Set(plan.map((tile) => tileKey(tile.x, tile.y)));
+    if (!selectedKeys.size) return;
+    playSound("remove");
+    setGame((state) => {
+      const removed = state.belts.filter((belt) => selectedKeys.has(tileKey(belt.x, belt.y)));
+      if (!removed.length) return state;
+      const core = { ...state.core };
+      for (const belt of removed) {
+        if (belt.item) addItem(core, belt.item, 1);
+        if (belt.secondaryItem) addItem(core, belt.secondaryItem, 1);
+      }
+      return { ...state, core, belts: state.belts.filter((belt) => !selectedKeys.has(tileKey(belt.x, belt.y))), message: `벨트 ${removed.length}칸 철거 · 운송 아이템 코어 반환` };
+    });
+  };
+  const confirmBeltRemoval = () => { if (pendingBeltRemoval) removeBeltPlan(pendingBeltRemoval); setPendingBeltRemoval(null); setBeltRemovePreview([]); };
+  const cancelBeltRemoval = () => { setPendingBeltRemoval(null); setBeltRemovePreview([]); setGame((state) => ({ ...state, message: "벨트 철거 선택을 취소했습니다." })); };
 
   const handleTileClick = (rawX: number, rawY: number, eventTime: number) => {
     if (eventTime < suppressClickUntilRef.current || game.phase !== "PLAYING") return;
@@ -427,15 +460,26 @@ export default function Home() {
     };
   };
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (game.phase !== "PLAYING" || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
+    const rightMouse = event.pointerType === "mouse" && event.button === 2;
+    if (pendingBeltPlan || pendingBeltRemoval || game.phase !== "PLAYING" || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0 && !(beltMode && rightMouse))) return;
     const tile = pointerTile(event.target) ?? pointerTileAt(event.clientX, event.clientY);
-    if (beltMode && tile && canPaintBeltAt(tile.x, tile.y)) {
+    if (beltMode && tile && (beltEraseMode || rightMouse)) {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      beltPaintRef.current = { pointerId: event.pointerId, lastX: tile.x, lastY: tile.y, placed: new Set([tileKey(tile.x, tile.y)]) };
+      const belt = game.belts.find((entry) => entry.x === tile.x && entry.y === tile.y);
+      const tiles = belt ? [{ x: belt.x, y: belt.y, direction: belt.direction }] : [];
+      beltRemoveRef.current = { pointerId: event.pointerId, lastX: tile.x, lastY: tile.y, selected: new Set(tiles.map((entry) => tileKey(entry.x, entry.y))), tiles };
+      setBeltRemovePreview(tiles);
       suppressClickUntilRef.current = event.timeStamp + 500;
-      playSound("belt");
-      placeBeltAt(tile.x, tile.y);
+      return;
+    }
+    if (!rightMouse && beltMode && tile && canPaintBeltAt(tile.x, tile.y)) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const tiles = [{ x: tile.x, y: tile.y, direction: beltDirection }];
+      beltPaintRef.current = { pointerId: event.pointerId, lastX: tile.x, lastY: tile.y, placed: new Set([tileKey(tile.x, tile.y)]), tiles };
+      setBeltPreview(tiles);
+      suppressClickUntilRef.current = event.timeStamp + 500;
       return;
     }
     const drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, cameraX: camera.x, cameraY: camera.y, moved: false, timer: null as number | null, tileX: tile?.x, tileY: tile?.y };
@@ -443,6 +487,24 @@ export default function Home() {
     pointerDragRef.current = drag;
   };
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const beltRemove = beltRemoveRef.current;
+    if (beltRemove?.pointerId === event.pointerId) {
+      event.preventDefault();
+      const tile = pointerTileAt(event.clientX, event.clientY);
+      if (!tile || (tile.x === beltRemove.lastX && tile.y === beltRemove.lastY)) return;
+      for (const next of orthogonalTilePath({ x: beltRemove.lastX, y: beltRemove.lastY }, tile)) {
+        const key = tileKey(next.x, next.y);
+        const belt = game.belts.find((entry) => entry.x === next.x && entry.y === next.y);
+        if (belt && !beltRemove.selected.has(key)) {
+          beltRemove.selected.add(key);
+          beltRemove.tiles.push({ x: belt.x, y: belt.y, direction: belt.direction });
+        }
+      }
+      beltRemove.lastX = tile.x; beltRemove.lastY = tile.y;
+      setBeltRemovePreview([...beltRemove.tiles]);
+      suppressClickUntilRef.current = event.timeStamp + 350;
+      return;
+    }
     const beltPaint = beltPaintRef.current;
     if (beltPaint?.pointerId === event.pointerId) {
       event.preventDefault();
@@ -452,10 +514,16 @@ export default function Home() {
       for (const next of orthogonalTilePath(previous, tile)) {
         const key = tileKey(next.x, next.y);
         const direction = directionBetween(previous, next) ?? beltDirection;
-        if (!beltPaint.placed.has(key) && canPaintBeltAt(next.x, next.y)) { placeBeltAt(next.x, next.y, direction); beltPaint.placed.add(key); }
+        if (!beltPaint.placed.has(key) && canPaintBeltAt(next.x, next.y)) {
+          const lastIndex = beltPaint.tiles.length - 1;
+          beltPaint.tiles[lastIndex] = { ...beltPaint.tiles[lastIndex], direction };
+          beltPaint.tiles.push({ x: next.x, y: next.y, direction });
+          beltPaint.placed.add(key);
+        }
         previous = next;
       }
       beltPaint.lastX = tile.x; beltPaint.lastY = tile.y;
+      setBeltPreview([...beltPaint.tiles]);
       suppressClickUntilRef.current = event.timeStamp + 350;
       return;
     }
@@ -470,10 +538,31 @@ export default function Home() {
     if (drag.moved) { event.preventDefault(); suppressClickUntilRef.current = event.timeStamp + 250; setCamera({ x: drag.cameraX - dx / zoom, y: drag.cameraY - dy / zoom }); }
   };
   const finishPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const beltRemove = beltRemoveRef.current;
+    if (beltRemove?.pointerId === event.pointerId) {
+      suppressClickUntilRef.current = event.timeStamp + 350;
+      beltRemoveRef.current = null;
+      if (beltRemove.tiles.length >= 5) {
+        setPendingBeltRemoval([...beltRemove.tiles]);
+        setGame((state) => ({ ...state, message: `벨트 ${beltRemove.tiles.length}칸 철거를 확인해 주세요.` }));
+      } else {
+        removeBeltPlan(beltRemove.tiles);
+        setBeltRemovePreview([]);
+      }
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      return;
+    }
     const beltPaint = beltPaintRef.current;
     if (beltPaint?.pointerId === event.pointerId) {
       suppressClickUntilRef.current = event.timeStamp + 350;
       beltPaintRef.current = null;
+      if (beltPaint.tiles.length >= 5) {
+        setPendingBeltPlan([...beltPaint.tiles]);
+        setGame((state) => ({ ...state, message: `벨트 ${beltPaint.tiles.length}칸 설치를 확인해 주세요.` }));
+      } else {
+        commitBeltPlan(beltPaint.tiles);
+        setBeltPreview([]);
+      }
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       return;
     }
@@ -506,7 +595,7 @@ export default function Home() {
     setCommandFeedback(""); setCommandInput(""); setCommandOpen(false);
   };
   const submitCommand = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); executeCommand(); };
-  const closePanels = () => { setBuildOpen(false); setMarketOpen(false); setHelpOpen(false); setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); setSelectedBuilding(null); setSelectedId(null); setBeltMode(false); setMovingId(null); setPendingChunk(null); };
+  const closePanels = () => { setBuildOpen(false); setMarketOpen(false); setHelpOpen(false); setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); setSelectedBuilding(null); setSelectedId(null); setBeltMode(false); setBeltEraseMode(false); setBeltPreview([]); setBeltRemovePreview([]); setPendingBeltPlan(null); setPendingBeltRemoval(null); setMovingId(null); setPendingChunk(null); };
   const startGame = () => { setGame((state) => state.power <= 0 ? { ...state, phase: "GAME_OVER" } : { ...state, phase: "PLAYING", message: state.tick > 0 ? "저장된 공장 운영을 계속합니다." : "공장 운영을 시작합니다." }); setHasSavedGame(true); };
   const resetGame = (startImmediately = false) => { localStorage.removeItem(SAVE_KEY); setGame(initialGame(startImmediately ? "PLAYING" : "READY")); setHasSavedGame(startImmediately); setCamera({ x: CAMERA_START, y: CAMERA_START }); closePanels(); };
   const totalStaged = game.stagedSales.reduce((sum, line) => sum + (ALL_ITEMS[line.item].sellPrice ?? 0) * line.quantity, 0);
@@ -521,13 +610,14 @@ export default function Home() {
     <header className="topbar"><div className="brand"><span className="brand-mark"><Factory /></span><span><strong>FOUNDRY FRONTIER</strong><small>SECTOR 04 · OPERATIONS</small></span></div><div className="stats-row"><Stat icon={<Coins />} label="골드" value={game.gold.toLocaleString()} /><Stat icon={<Zap />} label="보관 전력" value={Math.floor(game.power).toLocaleString()} detail={`/ ${game.powerCapacity.toLocaleString()}`} /><Stat icon={<Gauge />} label="최근 전력 정산" value={`${game.lastPowerDelta >= 0 ? "+" : ""}${game.lastPowerDelta}`} detail={`${game.lastPowerProduced} 생산 - ${game.lastPowerUsed} 사용`} /><Stat icon={<Map />} label="해금 구역" value={`${game.unlockedChunks.length}`} detail={`/ ${TOTAL_CHUNKS} 청크`} /></div><div className="top-actions"><Button variant="ghost" size="icon" aria-label={soundEnabled ? "소리 끄기" : "소리 켜기"} title={soundEnabled ? "소리 끄기" : "소리 켜기"} onClick={toggleSound}>{soundEnabled ? <Volume2 /> : <VolumeX />}</Button><Button variant="ghost" size="icon" aria-label="도움말" onClick={() => setHelpOpen(true)}><HelpCircle /></Button><Button variant="ghost" size="sm" onClick={() => resetGame(false)}>새 게임</Button></div></header>
     <section className="workspace">
       <div ref={viewportRef} className={`world ${beltMode ? "mode-belt" : ""} ${selectedBuilding || movingId ? "mode-build" : ""}`} onMouseLeave={() => setHoverTile(null)} onWheel={(event) => setZoom((v) => Math.max(.55, Math.min(1.45, v - event.deltaY * .0008)))} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishPointer} onPointerCancel={finishPointer} onContextMenu={(event) => event.preventDefault()} aria-label="공장 건설 지도"><div className="terrain" />
-        {visible.map(({ x, y }) => { const cx = Math.floor(x / CHUNK_SIZE); const cy = Math.floor(y / CHUNK_SIZE); const key = chunkKey(cx, cy); const insideMap = Math.max(Math.abs(cx), Math.abs(cy)) <= MAP_RADIUS_CHUNKS; const open = unlocked.has(key); const inSight = isWithinSight(x, y); const adjacent = insideMap && isAdjacentChunk(cx, cy) && inSight; const fringe = insideMap && !open && !adjacent && inSight; const ore = open || inSight ? oreAnchorAt(x, y, game.worldSeed) : undefined; const plant = open ? availableWildPlantAt(x, y) : undefined; const surveyedOres = adjacent && isSurveyMarkerTile(cx, cy, x, y) ? oresForChunk(cx, cy, game.worldSeed) : undefined; const edge = x % CHUNK_SIZE === 0 || y % CHUNK_SIZE === 0; const fogTexture = open ? {} : { backgroundSize: `${scale * CHUNK_SIZE}px ${scale * CHUNK_SIZE}px`, backgroundPosition: `${-chunkLocal(x) * scale}px ${-chunkLocal(y) * scale}px` }; return <button type="button" tabIndex={-1} key={tileKey(x, y)} data-tile-x={x} data-tile-y={y} className={`tile ${open ? "open" : adjacent ? "adjacent" : fringe ? "fringe" : "fog"} ${edge ? "chunk-edge" : ""}`} style={{ ...tilePosition(x, y), ...fogTexture }} onMouseEnter={() => setHoverTile({ x, y })} onClick={(event) => handleTileClick(x, y, event.timeStamp)} onContextMenu={(event) => handleContext(event, x, y)} aria-label={`타일 ${x}, ${y}`}>{ore && <span className={`ore ore-${ore.tier} ${open ? "" : "ore-surveyed"}`} style={{ width: scale * 3 - 8, height: scale * 3 - 8 }} title={`${open ? "" : "탐사됨 · "}${ore.tier}티어 3×3 광맥`}><b>T{ore.tier}</b></span>}{plant && <span className="wild-plant item-sprite" style={itemSpriteStyle(plant.item)} title={`야생 ${ALL_ITEMS[plant.item].name} · 우클릭하여 채집`} />}{surveyedOres && <span className={`chunk-survey ${surveyedOres.length ? `survey-tier-${surveyedOres[0].tier}` : "survey-empty"}`}><b>{surveyedOres.length ? `T${surveyedOres[0].tier} 광맥` : "광맥 없음"}</b><small>{surveyedOres.length ? `${surveyedOres.length}개 탐지` : "0개"}</small></span>}</button>; })}
-        {game.belts.map((belt) => <button key={tileKey(belt.x, belt.y)} data-tile-x={belt.x} data-tile-y={belt.y} type="button" className={`belt belt-direction-${belt.direction} ${beltShapeClass(belt, game.belts)}`} style={tilePosition(belt.x, belt.y)} onContextMenu={(event) => handleContext(event, belt.x, belt.y)} aria-label={`${BELT_KIND_LABEL[beltKindOf(belt)]} 컨베이어 벨트 ${DIRECTIONS[belt.direction].arrow}`}><span data-arrow={DIRECTIONS[belt.direction].arrow} aria-hidden="true" />{belt.item && <i className="item-sprite belt-item-primary" style={itemSpriteStyle(belt.item)} title={ALL_ITEMS[belt.item].name} />}{belt.secondaryItem && <i className="item-sprite belt-item-secondary" style={itemSpriteStyle(belt.secondaryItem)} title={ALL_ITEMS[belt.secondaryItem].name} />}</button>)}
+        {visible.map(({ x, y }) => { const cx = Math.floor(x / CHUNK_SIZE); const cy = Math.floor(y / CHUNK_SIZE); const key = chunkKey(cx, cy); const insideMap = Math.max(Math.abs(cx), Math.abs(cy)) <= MAP_RADIUS_CHUNKS; const open = unlocked.has(key); const inSight = isWithinSight(x, y); const adjacent = insideMap && !open && isAdjacentChunk(cx, cy) && inSight; const fringe = insideMap && !open && !adjacent && inSight; const ore = open || inSight ? oreAnchorAt(x, y, game.worldSeed) : undefined; const plant = open ? availableWildPlantAt(x, y) : undefined; const surveyedOres = adjacent && isSurveyMarkerTile(cx, cy, x, y) ? oresForChunk(cx, cy, game.worldSeed) : undefined; const edge = x % CHUNK_SIZE === 0 || y % CHUNK_SIZE === 0; const fogTexture = open ? {} : { backgroundSize: `${scale * CHUNK_SIZE}px ${scale * CHUNK_SIZE}px`, backgroundPosition: `${-chunkLocal(x) * scale}px ${-chunkLocal(y) * scale}px` }; return <button type="button" tabIndex={-1} key={tileKey(x, y)} data-tile-x={x} data-tile-y={y} className={`tile ${open ? "open" : adjacent ? "adjacent" : fringe ? "fringe" : "fog"} ${edge ? "chunk-edge" : ""} ${ore ? "has-ore" : ""} ${surveyedOres ? "has-survey" : ""}`} style={{ ...tilePosition(x, y), ...fogTexture }} onMouseEnter={() => setHoverTile({ x, y })} onClick={(event) => handleTileClick(x, y, event.timeStamp)} onContextMenu={(event) => handleContext(event, x, y)} aria-label={`타일 ${x}, ${y}`}>{ore && <span className={`ore ore-${ore.tier} ${open ? "" : "ore-surveyed"}`} style={{ width: scale * 3 - 8, height: scale * 3 - 8 }} title={`${open ? "" : "탐사됨 · "}${ore.tier}티어 3×3 광맥`}><b>T{ore.tier}</b></span>}{plant && <span className="wild-plant item-sprite" style={itemSpriteStyle(plant.item)} title={`야생 ${ALL_ITEMS[plant.item].name} · 우클릭하여 채집`} />}{surveyedOres && <span className={`chunk-survey ${surveyedOres.length ? `survey-tier-${surveyedOres[0].tier}` : "survey-empty"}`}><b>{surveyedOres.length ? `T${surveyedOres[0].tier} 광맥` : "광맥 없음"}</b><small>{surveyedOres.length ? `${surveyedOres.length}개 탐지` : "0개"}</small></span>}</button>; })}
+        {game.belts.map((belt) => <button key={tileKey(belt.x, belt.y)} data-tile-x={belt.x} data-tile-y={belt.y} type="button" className={`belt belt-direction-${belt.direction} ${beltShapeClass(belt, game.belts)} ${beltRemovePreview.some((tile) => tile.x === belt.x && tile.y === belt.y) ? "belt-remove-preview" : ""}`} style={tilePosition(belt.x, belt.y)} onContextMenu={(event) => handleContext(event, belt.x, belt.y)} aria-label={`${BELT_KIND_LABEL[beltKindOf(belt)]} 컨베이어 벨트 ${DIRECTIONS[belt.direction].arrow}`}><span data-arrow={DIRECTIONS[belt.direction].arrow} aria-hidden="true" />{belt.item && <i className="item-sprite belt-item-primary" style={itemSpriteStyle(belt.item)} title={ALL_ITEMS[belt.item].name} />}{belt.secondaryItem && <i className="item-sprite belt-item-secondary" style={itemSpriteStyle(belt.secondaryItem)} title={ALL_ITEMS[belt.secondaryItem].name} />}</button>)}
+        {beltPreview.map((tile) => { const previewBelt: Belt = { ...tile, kind: beltKind }; const previewNetwork: Belt[] = [...game.belts, ...beltPreview.map((entry) => ({ ...entry, kind: beltKind }))]; return <div key={`preview-${tileKey(tile.x, tile.y)}`} className={`belt belt-preview belt-direction-${tile.direction} ${beltShapeClass(previewBelt, previewNetwork)}`} style={tilePosition(tile.x, tile.y)}><span data-arrow={DIRECTIONS[tile.direction].arrow} aria-hidden="true" /></div>; })}
         {game.buildings.map((building) => { const definition = BUILDINGS[building.type]; const position = tilePosition(building.x, building.y); return <button key={building.id} data-tile-x={building.x} data-tile-y={building.y} type="button" className={`building building-${building.type} ${!building.active ? "offline" : ""} ${selectedId === building.id ? "selected" : ""}`} style={{ ...position, width: scale * definition.size, height: scale * definition.size }} onContextMenu={(event) => handleContext(event, building.x, building.y)} onClick={(event) => { if (event.timeStamp >= suppressClickUntilRef.current) setSelectedId(building.id); }}><BuildingPorts type={building.type} /><span className="building-glyph" style={buildingSpriteStyle(building.type)}>{definition.glyph}</span><strong>{definition.name}</strong><small>{!building.active ? "전력 부족" : building.type === "core" ? "ONLINE" : `${definition.power}⚡/2초`}</small></button>; })}
         {previewTarget && previewType && <div className={`building building-preview ${previewValid ? "preview-valid" : "preview-invalid"}`} style={{ ...tilePosition(previewTarget.x, previewTarget.y), width: scale * BUILDINGS[previewType].size, height: scale * BUILDINGS[previewType].size }}><BuildingPorts type={previewType} /><span className="building-glyph" style={buildingSpriteStyle(previewType)}>{BUILDINGS[previewType].glyph}</span><strong>{BUILDINGS[previewType].name}</strong><small>{previewTarget.snapped ? "광맥 자동 정렬" : previewValid ? "설치 가능" : "설치 불가"}</small></div>}
         <div className="crosshair" aria-hidden="true" /><div className="coordinates">X {Math.floor(camera.x / TILE)} · Y {Math.floor(camera.y / TILE)} · {Math.round(zoom * 100)}%</div>
       </div>
-      <nav className="command-dock" aria-label="게임 명령"><Button className={buildOpen || selectedBuilding ? "active" : ""} variant="secondary" onClick={() => { setBuildOpen((v) => !v); setMarketOpen(false); }}><Hammer /> {selectedBuilding ? BUILDINGS[selectedBuilding].name : "건물"} <kbd>Q</kbd></Button><Button className={beltMode ? "active" : ""} variant="secondary" onClick={() => { setBeltMode((v) => !v); setSelectedBuilding(null); }}><Box /> 벨트 <kbd>E</kbd></Button>{beltMode && <><Button variant="outline" onClick={cycleBeltKind}>{BELT_KIND_LABEL[beltKind]} <kbd>F</kbd></Button><Button variant="outline" onClick={rotateBelt}><RotateCw /> {DIRECTIONS[beltDirection].arrow} <kbd>R</kbd></Button></>}<Button className={marketOpen ? "active" : ""} variant="secondary" onClick={() => { setMarketOpen((v) => !v); setBuildOpen(false); setSelectedBuilding(null); }}><ShoppingCart /> 판매소 <kbd>Space</kbd></Button></nav>
+      <nav className="command-dock" aria-label="게임 명령"><Button className={buildOpen || selectedBuilding ? "active" : ""} variant="secondary" onClick={() => { setBuildOpen((v) => !v); setMarketOpen(false); }}><Hammer /> {selectedBuilding ? BUILDINGS[selectedBuilding].name : "건물"} <kbd>Q</kbd></Button><Button className={beltMode ? "active" : ""} variant="secondary" onClick={() => { setBeltMode((v) => !v); setBeltEraseMode(false); setSelectedBuilding(null); }}><Box /> 벨트 <kbd>E</kbd></Button>{beltMode && <><Button variant="outline" onClick={cycleBeltKind}>{BELT_KIND_LABEL[beltKind]} <kbd>F</kbd></Button><Button variant="outline" onClick={rotateBelt}><RotateCw /> {DIRECTIONS[beltDirection].arrow} <kbd>R</kbd></Button><Button className={beltEraseMode ? "active belt-erase-active" : ""} variant="outline" onClick={() => setBeltEraseMode((active) => !active)}><Trash2 /> 삭제 선택</Button></>}<Button className={marketOpen ? "active" : ""} variant="secondary" onClick={() => { setMarketOpen((v) => !v); setBuildOpen(false); setSelectedBuilding(null); }}><ShoppingCart /> 판매소 <kbd>Space</kbd></Button></nav>
       <div className="status-line"><span className="pulse" />{game.message}<small>자동 저장됨</small></div>
       {movingBuilding && <div className="relocation-banner" role="status"><Move /><span><strong>{BUILDINGS[movingBuilding.type].name} 이동 중</strong><small>새 위치를 클릭하거나 탭하세요 · 내부 아이템 {movingInventory}개 유지</small></span><Button size="sm" variant="outline" onClick={cancelMove}>취소</Button></div>}
       {game.phase === "READY" && <section className="state-overlay" role="dialog" aria-modal="true" aria-labelledby="ready-title"><div className="state-card"><small>FOUNDRY CONTROL</small><h1 id="ready-title">가동 준비 완료</h1><p>{hasSavedGame ? "저장된 공장 상태를 불러왔습니다. 준비가 되면 운영을 계속하세요." : "미개척 광구의 첫 생산 라인을 구축할 준비가 되었습니다."}</p><div className="state-summary"><span>시작 골드 <strong>{game.gold.toLocaleString()} G</strong></span><span>보관 전력 <strong>{game.power.toLocaleString()}</strong></span></div><Button size="lg" onClick={startGame}>{hasSavedGame ? "이어하기" : "게임 시작"}</Button>{hasSavedGame && <Button variant="outline" onClick={() => resetGame(true)}>새 게임으로 시작</Button>}</div></section>}
@@ -537,6 +627,8 @@ export default function Home() {
       {buildOpen && <aside className="panel build-panel"><PanelHead eyebrow="건설 카탈로그" title="생산 설비" close={() => setBuildOpen(false)} />{(["채굴", "재배", "가공", "물류", "전력"] as const).map((category) => <div className="build-group" key={category}><h3>{category}</h3>{Object.values(BUILDINGS).filter((b) => b.category === category && b.type !== "core").map((b) => <div className="build-entry" key={b.type}><button className={`build-card ${selectedBuilding === b.type ? "chosen" : ""}`} onClick={() => { setSelectedBuilding(b.type); setBeltMode(false); setBuildOpen(false); setGame((state) => ({ ...state, message: `${b.name} 배치 중 · 마우스를 움직여 위치를 선택하세요.` })); }}><span className="mini-glyph" style={buildingSpriteStyle(b.type)}>{b.glyph}</span><span><strong>{b.name}</strong><small>{b.description}</small></span><span className="build-cost"><em>{b.cost} G</em><small>{b.power > 0 ? `${b.power} ⚡/2초` : "소모 0 ⚡"}</small></span></button>{RECIPES[b.type].length ? <details className="recipe-guide"><summary>조합법 {RECIPES[b.type].length}개 보기</summary><div>{RECIPES[b.type].map((recipe) => <RecipeFormula recipe={recipe} key={recipe.id} />)}</div></details> : <p className="recipe-none">고정 기능 · 조합법 없음</p>}</div>)}</div>)}</aside>}
       {selected && <aside className="panel inspector"><PanelHead eyebrow="설비 관리" title={BUILDINGS[selected.type].name} close={() => setSelectedId(null)} /><div className="power-state"><Power /><span><strong>{selected.active ? "정상 가동" : "가동 중지"}</strong><small>작동 시 2초당 {BUILDINGS[selected.type].power} 전력</small></span></div>{RECIPES[selected.type].length > 0 && <label className="field-label">제작법<select value={selected.recipeId} onChange={(e) => changeRecipe(e.target.value)}>{RECIPES[selected.type].map((r) => <option value={r.id} key={r.id}>{r.name}</option>)}</select></label>}{selectedRecipe && <section className="selected-recipe"><small>현재 조합법</small><RecipeFormula recipe={selectedRecipe} /></section>}{selected.type === "outputter" && <label className="field-label">출력 아이템<select value={selected.selectedOutput ?? 103} onChange={(e) => updateBuilding({ selectedOutput: Number(e.target.value) as AnyItemId })}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}{selected.type === "core" && <section className="core-output-settings"><h3>출력 포트별 아이템</h3>{["우측 상단", "우측 위", "우측 중앙", "우측 아래", "우측 하단", "하단 중앙"].map((label, index) => <label key={label}><span>{index + 1}. {label}</span><select value={selected.outputSelections?.[index] ?? 103} onChange={(event) => updateCoreOutput(index, Number(event.target.value) as AnyItemId)}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>)}</section>}<div className="inventory-grid"><InventoryList title={`입력 보관 · ${inputSlotLimit(selected) === Infinity ? "무제한" : `${inputSlotLimit(selected)}종`}`} inventory={selected.input} onReturn={selected.type === "core" ? undefined : (item) => returnInventoryItem("input", item)} /><InventoryList title="출력 보관 · 1종" inventory={selected.output} onReturn={selected.type === "core" ? undefined : (item) => returnInventoryItem("output", item)} /></div>{selected.type === "core" && <InventoryList title="코어 통합 보관함" inventory={game.core} />}{selected.type !== "core" && <div className="inspector-actions"><Button variant="outline" onClick={beginMove}><Move /> 이동</Button><Button variant="destructive" onClick={removeBuilding}><Trash2 /> 철거</Button></div>}</aside>}
       {marketOpen && <aside className="panel market-panel"><PanelHead eyebrow="광구 거래소" title="판매 스테이지" close={() => setMarketOpen(false)} /><label className="field-label">판매 아이템<select value={saleItem} onChange={(e) => setSaleItem(Number(e.target.value) as AnyItemId)}>{SELLABLE_IDS.map((id) => <option value={id} key={id}>{ALL_ITEMS[id].name} · 보유 {inventoryCount(game.core, id)}개 · {ALL_ITEMS[id].sellPrice} G</option>)}</select></label><div className="stock-line"><span>현재 보유량</span><strong>{inventoryCount(game.core, saleItem).toLocaleString()}개</strong></div><label className="field-label">수량<div className="quantity-row"><Input min={1} step={1} type="number" value={saleQuantity} onChange={(e) => setSaleQuantity(e.target.value === "" ? "" : Number(e.target.value))} /><Button variant="outline" onClick={selectAllCurrent}>전량 선택</Button></div></label><div className="market-actions"><Button onClick={stageSale}>선택 수량 올리기</Button><Button variant="outline" onClick={stageAllSellable}>전체 재고 올리기</Button></div><div className="sale-stage">{game.stagedSales.length === 0 ? <p>판매할 아이템을 선택해 주세요.</p> : game.stagedSales.map((line, index) => <div key={`${line.item}-${index}`}><span>{ALL_ITEMS[line.item].name}</span><strong>{line.quantity}개</strong><em>{((ALL_ITEMS[line.item].sellPrice ?? 0) * line.quantity).toLocaleString()} G</em></div>)}</div><div className="sale-total"><span>예상 수익</span><strong>{totalStaged.toLocaleString()} G</strong></div><Button disabled={!game.stagedSales.length} onClick={confirmSale} className="w-full sell-button"><Coins /> 판매 확정</Button></aside>}
+      {pendingBeltPlan && <aside className="belt-confirm" role="dialog" aria-modal="true" aria-label="벨트 설치 확인"><small>벨트 경로 확인</small><h2>{pendingBeltPlan.length}칸을 설치할까요?</h2><p>체크하면 미리 본 경로대로 설치하고, ×를 누르면 모두 취소합니다.</p><div><Button variant="outline" size="icon" aria-label="벨트 설치 취소" title="취소" onClick={cancelBeltPlan}><X /></Button><Button size="icon" aria-label="벨트 설치 확정" title="설치" onClick={confirmBeltPlan}><Check /></Button></div></aside>}
+      {pendingBeltRemoval && <aside className="belt-confirm belt-remove-confirm" role="dialog" aria-modal="true" aria-label="벨트 철거 확인"><small>벨트 철거 확인</small><h2>{pendingBeltRemoval.length}칸을 삭제할까요?</h2><p>체크하면 붉게 선택한 벨트를 철거하고, ×를 누르면 모두 유지합니다.</p><div><Button variant="outline" size="icon" aria-label="벨트 철거 취소" title="취소" onClick={cancelBeltRemoval}><X /></Button><Button variant="destructive" size="icon" aria-label="벨트 철거 확정" title="철거" onClick={confirmBeltRemoval}><Check /></Button></div></aside>}
       {pendingChunk && <aside className="chunk-dialog"><small>미개척 구역</small><h2>청크 [{pendingChunk.x}, {pendingChunk.y}]</h2><p>새 광맥과 건설 공간을 조사합니다. 인접 청크만 해금할 수 있습니다.</p><strong>{chunkPrice(game.unlockedChunks.length - 1).toLocaleString()} GOLD</strong><div><Button variant="outline" onClick={() => setPendingChunk(null)}>취소</Button><Button onClick={buyChunk}>구역 해금</Button></div></aside>}
       {helpOpen && <aside className="help-dialog"><PanelHead eyebrow="운영 매뉴얼" title="조작 방법" close={() => setHelpOpen(false)} /><div className="help-grid"><kbd>W A S D</kbd><span>카메라 이동</span><kbd>마우스 드래그</kbd><span>왼쪽 버튼으로 지도 이동</span><kbd>좌클릭</kbd><span>설치 및 결정</span><kbd>우클릭</kbd><span>설비 관리 / 광맥 채굴 / 야생 식물 채집</span><kbd>Q / E / Space</kbd><span>건물 / 벨트 / 판매소</span><kbd>벨트 드래그</kbd><span>지나간 칸에 연속 설치 · 직선과 ㄱ자 자동 연결</span><kbd>F</kbd><span>일반 / 교차 / 분배 / 합류 벨트 변경</span><kbd>R</kbd><span>다음 벨트 출력 방향 회전</span><kbd>휠</kbd><span>지도 확대·축소</span><kbd>터치</kbd><span>한 손가락 드래그 이동 / 길게 눌러 관리·채굴·채집</span></div><p>벨트 모드에서는 드래그로 연속 설치합니다. 교차 벨트는 표시 방향과 시계 방향의 두 흐름을 독립 운송하며, 분배 벨트는 두 출구를 번갈아 사용하고 합류 벨트는 여러 입력을 한 방향으로 보냅니다.</p></aside>}
       {commandOpen && <aside className="command-console" role="dialog" aria-modal="true" aria-label="커맨드 입력"><form onSubmit={submitCommand}><PanelHead eyebrow="FOUNDRY SYSTEM" title="커맨드 입력" close={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }} /><p><code>give 숫자</code>는 골드를, <code>give all</code>은 모든 재료를 추가합니다.</p><label className="field-label" htmlFor="command-code">COMMAND CODE<Input id="command-code" autoFocus autoComplete="off" spellCheck={false} value={commandInput} onChange={(event) => { setCommandInput(event.target.value); setCommandFeedback(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); executeCommand(); } else if (event.key === "Escape") { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); } }} placeholder="give 1000 / give all" /></label>{commandFeedback && <p className="command-feedback" role="alert">{commandFeedback}</p>}<div className="command-actions"><Button type="button" variant="outline" onClick={() => { setCommandOpen(false); setCommandInput(""); setCommandFeedback(""); }}>취소</Button><Button type="button" onClick={executeCommand}>실행</Button></div></form></aside>}
@@ -545,10 +637,12 @@ export default function Home() {
 }
 
 function BuildingPorts({ type }: { type: BuildingType }) {
-  const count = type === "core" ? BUILDINGS[type].inputPorts - 1 : BUILDINGS[type].inputPorts;
+  const inputCount = type === "core" ? BUILDINGS[type].inputPorts - 1 : BUILDINGS[type].inputPorts;
+  const outputCount = type === "core" ? BUILDINGS[type].outputPorts - 1 : BUILDINGS[type].outputPorts;
+  if (inputCount === 0 && outputCount === 0) return null;
   return <span className="ports" aria-hidden="true">
-    {Array.from({ length: count }, (_, index) => <i key={`in-${index}`} className="port port-input" style={{ top: `${((index + .5) / count) * 100}%` }} />)}
-    {Array.from({ length: count }, (_, index) => <i key={`out-${index}`} className="port port-output" style={{ top: `${((index + .5) / count) * 100}%` }} />)}
+    {Array.from({ length: inputCount }, (_, index) => <i key={`in-${index}`} className="port port-input" style={{ top: `${((index + .5) / inputCount) * 100}%` }} />)}
+    {Array.from({ length: outputCount }, (_, index) => <i key={`out-${index}`} className="port port-output" style={{ top: `${((index + .5) / outputCount) * 100}%` }} />)}
     {type === "core" && <><i className="port port-input port-top" /><i className="port port-output port-bottom" /></>}
   </span>;
 }

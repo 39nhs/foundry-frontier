@@ -81,6 +81,7 @@ button { color: inherit; }
 .world:active { cursor: grabbing; }
 .terrain { position: absolute; inset: -50%; background-image: linear-gradient(#07101238, #07101238), url("/assets/terrain-tile.png"); background-size: 640px 640px; filter: saturate(.78) brightness(.68); }
 .tile { position: absolute; border: 1px solid #81909417; background: #111a1c0d; padding: 0; overflow: visible; z-index: 1; }
+.tile.has-ore, .tile.has-survey { z-index: 6; }
 .tile.open:hover { background: #65d9d027; border-color: #7ce7de99; }
 .tile.chunk-edge { border-left-color: #85d2ce42; border-top-color: #85d2ce42; }
 .tile.fog { background-color: #040708; background-image: linear-gradient(#040708d5, #040708d5), url("/assets/fog-locked-chunk.png"); background-repeat: no-repeat; border-color: #111; pointer-events: none; }
@@ -140,6 +141,9 @@ button { color: inherit; }
 .belt i.item-sprite { position: absolute; z-index: 2; width: 17px; height: 17px; filter: drop-shadow(0 0 5px #fff6); }
 .belt-kind-cross .belt-item-primary { transform: translate(-6px, -6px); }
 .belt-kind-cross .belt-item-secondary { transform: translate(6px, 6px); }
+.belt-preview { z-index: 19; pointer-events: none; opacity: .68; border: 2px dashed #72e2da; background-color: #173638dc; box-shadow: 0 0 12px #58d8cf88; animation: preview-breathe .8s ease-in-out infinite alternate; }
+.belt-remove-preview { z-index: 20; border: 2px solid #ff6f61; background-color: #571d1bd9; box-shadow: 0 0 15px #ff493faa; filter: saturate(.5); }
+.belt-remove-preview::after { content: "×"; position: absolute; z-index: 4; inset: 0; display: grid; place-items: center; color: #fff; background: #5e11118c; font: 900 28px/1 var(--font-mono); text-shadow: 0 2px 5px #000; }
 .building { position: absolute; z-index: 10; border: 2px solid #4c5e62; background: linear-gradient(135deg, #283437ed, #111719ed); box-shadow: inset 0 0 0 5px #0b1011a8, 0 8px 18px #0009; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; overflow: hidden; }
 .building::before, .building::after { content: ""; position: absolute; background: #63747755; }
 .building::before { width: 70%; height: 3px; top: 12px; }
@@ -246,12 +250,18 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; min-height: 20
 .sale-total { display: flex; justify-content: space-between; padding: 14px 2px; }
 .sale-total strong { color: #f3b34f; font: 700 17px var(--font-mono); }
 .sell-button { background: #d79431; }
-.chunk-dialog, .help-dialog { position: absolute; z-index: 60; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(430px, calc(100% - 30px)); padding: 22px; background: #111719f5; border: 1px solid #efa638; box-shadow: 0 25px 80px #000e; }
-.chunk-dialog small { color: #e5a641; font: 10px var(--font-mono); letter-spacing: .12em; }
-.chunk-dialog h2 { margin: 5px 0 10px; }
-.chunk-dialog p, .help-dialog > p { color: #9aa6a8; line-height: 1.6; font-size: 13px; }
+.chunk-dialog, .belt-confirm, .help-dialog { position: absolute; z-index: 60; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(430px, calc(100% - 30px)); padding: 22px; background: #111719f5; border: 1px solid #efa638; box-shadow: 0 25px 80px #000e; }
+.chunk-dialog small, .belt-confirm small { color: #e5a641; font: 10px var(--font-mono); letter-spacing: .12em; }
+.chunk-dialog h2, .belt-confirm h2 { margin: 5px 0 10px; }
+.chunk-dialog p, .belt-confirm p, .help-dialog > p { color: #9aa6a8; line-height: 1.6; font-size: 13px; }
 .chunk-dialog > strong { display: block; margin: 18px 0; color: #f0b34f; font: 700 22px var(--font-mono); }
-.chunk-dialog > div { display: flex; justify-content: flex-end; gap: 8px; }
+.chunk-dialog > div, .belt-confirm > div { display: flex; justify-content: flex-end; gap: 8px; }
+.belt-confirm { z-index: 70; border-color: #72e2da; text-align: center; }
+.belt-confirm > div { justify-content: center; margin-top: 18px; }
+.belt-confirm button { width: 48px; height: 48px; }
+.belt-remove-confirm { border-color: #ef6252; }
+.belt-remove-confirm small { color: #ff897c; }
+.command-dock .belt-erase-active { color: #ffd3ce; border-color: #ef6252; background: #63241f; }
 .help-dialog { width: min(520px, calc(100% - 30px)); border-color: #526367; }
 .help-grid { display: grid; grid-template-columns: 130px 1fr; gap: 9px 15px; align-items: center; font-size: 13px; }
 .help-grid kbd { justify-self: stretch; padding: 6px; }

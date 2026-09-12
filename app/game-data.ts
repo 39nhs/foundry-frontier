@@ -144,16 +144,16 @@ export interface BuildingDefinition {
   cost: number;
   power: number;
   size: 3 | 5;
-  inputPorts: 3 | 6;
-  outputPorts: 3 | 6;
+  inputPorts: 0 | 3 | 6;
+  outputPorts: 0 | 3 | 6;
   description: string;
   glyph: string;
 }
 
 export const BUILDINGS: Record<BuildingType, BuildingDefinition> = {
   core: { type: "core", name: "코어", category: "물류", cost: 0, power: 0, size: 5, inputPorts: 6, outputPorts: 6, description: "모든 자원과 전력을 관리합니다.", glyph: "◆" },
-  miner: { type: "miner", name: "채굴기", category: "채굴", cost: 20, power: 10, size: 3, inputPorts: 3, outputPorts: 3, description: "2·3티어 광맥을 2초마다 채굴합니다.", glyph: "M" },
-  advancedMiner: { type: "advancedMiner", name: "고급 채굴기", category: "채굴", cost: 75, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "모든 티어 광맥을 2초마다 채굴합니다.", glyph: "A" },
+  miner: { type: "miner", name: "채굴기", category: "채굴", cost: 20, power: 10, size: 3, inputPorts: 0, outputPorts: 0, description: "2·3티어 광맥을 2초마다 채굴하고 10초마다 코어로 자동 전송합니다.", glyph: "M" },
+  advancedMiner: { type: "advancedMiner", name: "고급 채굴기", category: "채굴", cost: 75, power: 25, size: 3, inputPorts: 0, outputPorts: 0, description: "모든 티어 광맥을 2초마다 채굴하고 10초마다 코어로 자동 전송합니다.", glyph: "A" },
   outputter: { type: "outputter", name: "출력기", category: "물류", cost: 25, power: 25, size: 3, inputPorts: 3, outputPorts: 3, description: "코어의 지정 아이템을 벨트로 보냅니다.", glyph: "O" },
   refinery: { type: "refinery", name: "정제기", category: "가공", cost: 10, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "광물을 정제합니다.", glyph: "R" },
   crusher: { type: "crusher", name: "분쇄기", category: "가공", cost: 10, power: 15, size: 3, inputPorts: 3, outputPorts: 3, description: "광물을 분쇄합니다.", glyph: "C" },
