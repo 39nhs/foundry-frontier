@@ -11,8 +11,9 @@ type Inventory = Partial<Record<AnyItemId, number>>;
 type GamePhase = "READY" | "PLAYING" | "VICTORY" | "COMPLETED" | "GAME_OVER";
 type SoundKind = "build" | "belt" | "remove" | "mine" | "sale" | "unlock" | "return" | "warning";
 type BeltKind = "normal" | "cross" | "splitter" | "merger";
+type BuildingRotation = 0 | 1 | 2 | 3;
 type GiveCommand = { kind: "gold"; amount: number } | { kind: "all" };
-interface PlacedBuilding { id: string; type: BuildingType; x: number; y: number; recipeId?: string; selectedOutput?: AnyItemId; outputSelections?: Partial<Record<number, AnyItemId>>; input: Inventory; output: Inventory; active: boolean }
+interface PlacedBuilding { id: string; type: BuildingType; x: number; y: number; rotation?: BuildingRotation; recipeId?: string; selectedOutput?: AnyItemId; outputSelections?: Partial<Record<number, AnyItemId>>; input: Inventory; output: Inventory; active: boolean }
 interface Belt { x: number; y: number; direction: Direction; kind?: BeltKind; item?: AnyItemId; secondaryItem?: AnyItemId; splitIndex?: 0 | 1 }
 interface BeltPlanTile { x: number; y: number; direction: Direction }
 interface SaleLine { item: AnyItemId; quantity: number }
@@ -82,19 +83,36 @@ function inputSlotLimit(building: PlacedBuilding) {
   const recipe = RECIPES[building.type].find((candidate) => candidate.id === building.recipeId);
   return Math.max(1, recipe ? Object.keys(recipe.inputs).length : 1);
 }
+function compatibleRecipeForInput(building: PlacedBuilding, item: AnyItemId) {
+  const recipes = RECIPES[building.type];
+  if (!recipes.length) return undefined;
+  const storedItems = Object.entries(building.input).filter(([, amount]) => (amount ?? 0) > 0).map(([id]) => Number(id));
+  const compatible = (recipe: Recipe) => recipe.inputs[item] !== undefined && storedItems.every((stored) => recipe.inputs[stored as AnyItemId] !== undefined);
+  return recipes.find((recipe) => recipe.id === building.recipeId && compatible(recipe)) ?? recipes.find(compatible);
+}
 function canAcceptInput(building: PlacedBuilding, item: AnyItemId) {
   if (BUILDINGS[building.type].inputPorts === 0) return false;
+  if (building.type === "outputter") return false;
+  if (building.type === "generator" && !([601, 602, 603, 604] as AnyItemId[]).includes(item)) return false;
   const inventory = building.type === "core" ? undefined : building.input;
   if (!inventory) return true;
   if (inventoryCount(inventory, item) >= BUFFER_LIMIT) return false;
-  return inventoryCount(inventory, item) > 0 || inventoryTypeCount(inventory) < inputSlotLimit(building);
+  const recipes = RECIPES[building.type];
+  const recipe = compatibleRecipeForInput(building, item);
+  if (recipes.length && !recipe) return false;
+  const slotLimit = recipe ? Math.max(1, Object.keys(recipe.inputs).length) : inputSlotLimit(building);
+  return inventoryCount(inventory, item) > 0 || inventoryTypeCount(inventory) < slotLimit;
+}
+function receiveInput(building: PlacedBuilding, item: AnyItemId, amount = 1) {
+  const recipe = compatibleRecipeForInput(building, item);
+  if (recipe) building.recipeId = recipe.id;
+  addItem(building.input, item, amount, BUFFER_LIMIT);
 }
 function acceptedManualInputs(building: PlacedBuilding) {
   if (BUILDINGS[building.type].inputPorts === 0 || building.type === "core" || building.type === "outputter") return [];
   if (building.type === "inputter") return Object.keys(ALL_ITEMS).map(Number) as AnyItemId[];
   if (building.type === "generator") return [601, 602, 603, 604] as AnyItemId[];
-  const recipe = RECIPES[building.type].find((candidate) => candidate.id === building.recipeId);
-  return recipe ? Object.keys(recipe.inputs).map(Number) as AnyItemId[] : [];
+  return [...new Set(RECIPES[building.type].flatMap((recipe) => Object.keys(recipe.inputs).map(Number)))] as AnyItemId[];
 }
 function returnInventoriesToCore(core: Inventory, ...inventories: Inventory[]) {
   for (const inventory of inventories) for (const [id, amount] of Object.entries(inventory)) if ((amount ?? 0) > 0) addItem(core, Number(id) as AnyItemId, amount ?? 0);
@@ -102,21 +120,38 @@ function returnInventoriesToCore(core: Inventory, ...inventories: Inventory[]) {
 function buildingAt(buildings: PlacedBuilding[], x: number, y: number, ignoreId?: string) {
   return buildings.find((building) => { if (building.id === ignoreId) return false; const size = BUILDINGS[building.type].size; return x >= building.x && x < building.x + size && y >= building.y && y < building.y + size; });
 }
+function rotateLocalPoint(size: number, rotation: BuildingRotation, localX: number, localY: number) {
+  let x = localX; let y = localY;
+  for (let step = 0; step < rotation; step += 1) [x, y] = [size - 1 - y, x];
+  return { x, y };
+}
+function rotateBuildingPoint(building: PlacedBuilding, localX: number, localY: number) {
+  const point = rotateLocalPoint(BUILDINGS[building.type].size, building.rotation ?? 0, localX, localY);
+  const { x, y } = point;
+  return { x: building.x + x, y: building.y + y };
+}
 function inputPortTiles(building: PlacedBuilding) {
   const size = BUILDINGS[building.type].size;
   if (BUILDINGS[building.type].inputPorts === 0) return [];
-  const ports = Array.from({ length: size }, (_, index) => ({ x: building.x, y: building.y + index }));
-  if (building.type === "core") ports.push({ x: building.x + 2, y: building.y });
+  const ports = Array.from({ length: size }, (_, index) => rotateBuildingPoint(building, 0, index));
+  if (building.type === "core") ports.push(rotateBuildingPoint(building, 2, 0));
   return ports;
 }
 function outputTargets(building: PlacedBuilding) {
   const size = BUILDINGS[building.type].size;
   if (BUILDINGS[building.type].outputPorts === 0) return [];
-  const ports = Array.from({ length: size }, (_, index) => ({ x: building.x + size, y: building.y + index }));
-  if (building.type === "core") ports.push({ x: building.x + 2, y: building.y + size });
+  const ports = Array.from({ length: size }, (_, index) => rotateBuildingPoint(building, size, index));
+  if (building.type === "core") ports.push(rotateBuildingPoint(building, 2, size));
   return ports;
 }
 function isInputPort(building: PlacedBuilding, x: number, y: number) { return inputPortTiles(building).some((port) => port.x === x && port.y === y); }
+function outputDirectionFor(building: PlacedBuilding, target: { x: number; y: number }): Direction {
+  const size = BUILDINGS[building.type].size;
+  if (target.x < building.x) return "left";
+  if (target.x >= building.x + size) return "right";
+  if (target.y < building.y) return "up";
+  return "down";
+}
 function directionBetween(from: { x: number; y: number }, to: { x: number; y: number }): Direction | undefined {
   const dx = to.x - from.x; const dy = to.y - from.y;
   if (dx === 1 && dy === 0) return "right";
@@ -222,7 +257,8 @@ function processTick(previous: GameState): GameState {
     const receiver = buildingAt(state.buildings, tx, ty);
     const nextBelt = occupiedBelts.get(tileKey(tx, ty));
     if (receiver && isInputPort(receiver, tx, ty) && canAcceptInput(receiver, item)) {
-      addItem(receiver.type === "core" ? state.core : receiver.input, item, 1, receiver.type === "core" ? Infinity : BUFFER_LIMIT);
+      if (receiver.type === "core") addItem(state.core, item, 1);
+      else receiveInput(receiver, item);
       return true;
     }
     return Boolean(nextBelt && placeOnBelt(nextBelt, item, direction));
@@ -258,12 +294,13 @@ function processTick(previous: GameState): GameState {
         if (!item || inventoryCount(state.core, item) < 1) continue;
         const receiver = buildingAt(state.buildings, target.x, target.y);
         if (receiver && isInputPort(receiver, target.x, target.y) && canAcceptInput(receiver, item)) {
-          addItem(receiver.type === "core" ? state.core : receiver.input, item, 1, receiver.type === "core" ? Infinity : BUFFER_LIMIT);
+          if (receiver.type === "core") addItem(state.core, item, 1);
+          else receiveInput(receiver, item);
           addItem(state.core, item, -1);
           continue;
         }
         const belt = occupiedBelts.get(tileKey(target.x, target.y));
-        const outputDirection: Direction = target.x === building.x + BUILDINGS[building.type].size ? "right" : "down";
+        const outputDirection = outputDirectionFor(building, target);
         if (belt && placeOnBelt(belt, item, outputDirection)) addItem(state.core, item, -1);
       }
       continue;
@@ -271,9 +308,9 @@ function processTick(previous: GameState): GameState {
     const item = outputEntry ? Number(outputEntry[0]) as AnyItemId : undefined;
     if (!item) continue;
     const receiver = targets.map((target) => buildingAt(state.buildings, target.x, target.y)).find((candidate, index) => candidate && isInputPort(candidate, targets[index].x, targets[index].y) && canAcceptInput(candidate, item));
-    if (receiver) { addItem(receiver.type === "core" ? state.core : receiver.input, item, 1, receiver.type === "core" ? Infinity : BUFFER_LIMIT); addItem(building.output, item, -1); continue; }
-    const beltTarget = targets.map((target) => ({ target, belt: occupiedBelts.get(tileKey(target.x, target.y)) })).find(({ target, belt }) => belt && beltCanAccept(belt, target.x === building.x + BUILDINGS[building.type].size ? "right" : "down"));
-    if (beltTarget?.belt) { const outputDirection: Direction = beltTarget.target.x === building.x + BUILDINGS[building.type].size ? "right" : "down"; placeOnBelt(beltTarget.belt, item, outputDirection); addItem(building.output, item, -1); }
+    if (receiver) { if (receiver.type === "core") addItem(state.core, item, 1); else receiveInput(receiver, item); addItem(building.output, item, -1); continue; }
+    const beltTarget = targets.map((target) => ({ target, belt: occupiedBelts.get(tileKey(target.x, target.y)) })).find(({ target, belt }) => belt && beltCanAccept(belt, outputDirectionFor(building, target)));
+    if (beltTarget?.belt) { const outputDirection = outputDirectionFor(building, beltTarget.target); placeOnBelt(beltTarget.belt, item, outputDirection); addItem(building.output, item, -1); }
   }
   state.pendingPowerUsed = pendingPowerUsed;
   if (settlesPower) {
@@ -390,21 +427,14 @@ export default function Home() {
     if (reverse) for (let index = 0; index < oriented.length; index += 1) oriented[index].direction = index + 1 < oriented.length ? directionBetween(oriented[index], oriented[index + 1]) ?? terminalDirection ?? beltDirection : terminalDirection ?? beltDirection;
     const last = oriented.at(-1);
     if (last) {
-      const leftInput = game.buildings.some((building) => BUILDINGS[building.type].inputPorts > 0 && last.x === building.x - 1 && last.y >= building.y && last.y < building.y + BUILDINGS[building.type].size);
-      const coreTopInput = game.buildings.some((building) => building.type === "core" && last.x === building.x + 2 && last.y === building.y - 1);
-      if (leftInput) last.direction = "right";
-      else if (coreTopInput) last.direction = "down";
+      const inputDirection = game.buildings.flatMap((building) => inputPortTiles(building)).map((port) => directionBetween(last, port)).find(Boolean);
+      if (inputDirection) last.direction = inputDirection;
     }
     return oriented;
   };
   const beltStartAtPort = (tile: { x: number; y: number }) => {
     const building = buildingAt(game.buildings, tile.x, tile.y);
     if (!building) return { tile, reverse: false, direction: beltDirection };
-    const definition = BUILDINGS[building.type];
-    if (building.type === "core" && tile.x === building.x + 2 && tile.y === building.y) return { tile: { x: tile.x, y: building.y - 1 }, reverse: true, direction: "down" as Direction };
-    if (building.type === "core" && tile.x === building.x + 2 && tile.y === building.y + definition.size - 1) return { tile: { x: tile.x, y: building.y + definition.size }, reverse: false, direction: "down" as Direction };
-    if (definition.outputPorts > 0 && tile.x === building.x + definition.size - 1) return { tile: { x: building.x + definition.size, y: tile.y }, reverse: false, direction: "right" as Direction };
-    if (definition.inputPorts > 0 && tile.x === building.x) return { tile: { x: building.x - 1, y: tile.y }, reverse: true, direction: "right" as Direction };
     return undefined;
   };
   const canPaintBeltAt = (x: number, y: number) => {
@@ -624,6 +654,7 @@ export default function Home() {
   const rotateBelt = () => { const order: Direction[] = ["up", "right", "down", "left"]; setBeltDirection((d) => order[(order.indexOf(d) + 1) % order.length]); };
   const cycleBeltKind = () => setBeltKind((kind) => BELT_KINDS[(BELT_KINDS.indexOf(kind) + 1) % BELT_KINDS.length]);
   const updateBuilding = (patch: Partial<PlacedBuilding>) => { if (selected) setGame((s) => ({ ...s, buildings: s.buildings.map((b) => b.id === selected.id ? { ...b, ...patch } : b) })); };
+  const rotateBuildingPorts = () => { if (!selected) return; setGame((state) => ({ ...state, buildings: state.buildings.map((building) => building.id === selected.id ? { ...building, rotation: (((building.rotation ?? 0) + 1) % 4) as BuildingRotation } : building), message: `${BUILDINGS[selected.type].name} 입·출력 방향을 시계 방향으로 90° 회전했습니다.` })); };
   const updateCoreOutput = (portIndex: number, item: AnyItemId) => { if (!selected || selected.type !== "core") return; setGame((state) => ({ ...state, buildings: state.buildings.map((building) => building.id === selected.id ? { ...building, outputSelections: { ...building.outputSelections, [portIndex]: item } } : building), message: `코어 출력 포트 ${portIndex + 1}을 ${ALL_ITEMS[item].name}(으)로 설정했습니다.` })); };
   const addManualInput = (requested: number) => {
     if (!selected || !manualInputItem) return;
@@ -632,9 +663,10 @@ export default function Home() {
       if (!building || !acceptedManualInputs(building).includes(manualInputItem) || !canAcceptInput(building, manualInputItem)) return state;
       const amount = Math.min(requested, inventoryCount(state.core, manualInputItem), BUFFER_LIMIT - inventoryCount(building.input, manualInputItem));
       if (amount <= 0) return { ...state, message: "코어 재고가 없거나 입력 보관함이 가득 찼습니다." };
-      const core = { ...state.core }; const input = { ...building.input };
-      addItem(core, manualInputItem, -amount); addItem(input, manualInputItem, amount, BUFFER_LIMIT);
-      return { ...state, core, buildings: state.buildings.map((entry) => entry.id === building.id ? { ...entry, input } : entry), message: `${ALL_ITEMS[manualInputItem].name} ${amount}개를 입력 보관함에 넣었습니다.` };
+      const core = { ...state.core }; const updated = { ...building, input: { ...building.input } };
+      addItem(core, manualInputItem, -amount); receiveInput(updated, manualInputItem, amount);
+      const recipeName = RECIPES[updated.type].find((recipe) => recipe.id === updated.recipeId)?.name;
+      return { ...state, core, buildings: state.buildings.map((entry) => entry.id === building.id ? updated : entry), message: `${ALL_ITEMS[manualInputItem].name} ${amount}개 투입${recipeName ? ` · ${recipeName} 자동 선택` : ""}` };
     });
   };
   const returnInventoryItem = (kind: "input" | "output", item: AnyItemId, requested = Infinity) => { if (!selected || selected.type === "core") return; playSound("return"); setGame((state) => { const building = state.buildings.find((entry) => entry.id === selected.id); if (!building) return state; const amount = Math.min(requested, inventoryCount(building[kind], item)); if (amount <= 0) return state; const core = { ...state.core }; const inventory = { ...building[kind] }; addItem(core, item, amount); addItem(inventory, item, -amount); return { ...state, core, buildings: state.buildings.map((entry) => entry.id === building.id ? { ...entry, [kind]: inventory } : entry), message: `${ALL_ITEMS[item].name} ${amount}개를 코어로 회수했습니다.` }; }); };
@@ -672,7 +704,7 @@ export default function Home() {
         {visible.map(({ x, y }) => { const cx = Math.floor(x / CHUNK_SIZE); const cy = Math.floor(y / CHUNK_SIZE); const key = chunkKey(cx, cy); const insideMap = Math.max(Math.abs(cx), Math.abs(cy)) <= MAP_RADIUS_CHUNKS; const open = unlocked.has(key); const inSight = isWithinSight(x, y); const adjacent = insideMap && !open && isAdjacentChunk(cx, cy) && inSight; const fringe = insideMap && !open && !adjacent && inSight; const ore = open || inSight ? oreAnchorAt(x, y, game.worldSeed) : undefined; const plant = open ? availableWildPlantAt(x, y) : undefined; const surveyedOres = adjacent && isSurveyMarkerTile(cx, cy, x, y) ? oresForChunk(cx, cy, game.worldSeed) : undefined; const edge = x % CHUNK_SIZE === 0 || y % CHUNK_SIZE === 0; const fogTexture = open ? {} : { backgroundSize: `${scale * CHUNK_SIZE}px ${scale * CHUNK_SIZE}px`, backgroundPosition: `${-chunkLocal(x) * scale}px ${-chunkLocal(y) * scale}px` }; return <button type="button" tabIndex={-1} key={tileKey(x, y)} data-tile-x={x} data-tile-y={y} className={`tile ${open ? "open" : adjacent ? "adjacent" : fringe ? "fringe" : "fog"} ${edge ? "chunk-edge" : ""} ${ore ? "has-ore" : ""} ${surveyedOres ? "has-survey" : ""}`} style={{ ...tilePosition(x, y), ...fogTexture }} onMouseEnter={() => setHoverTile({ x, y })} onClick={(event) => handleTileClick(x, y, event.timeStamp)} onContextMenu={(event) => handleContext(event, x, y)} aria-label={`타일 ${x}, ${y}`}>{ore && <span className={`ore ore-${ore.tier} ${open ? "" : "ore-surveyed"}`} style={{ width: scale * 3 - 8, height: scale * 3 - 8 }} title={`${open ? "" : "탐사됨 · "}${ore.tier}티어 3×3 광맥`}><b>T{ore.tier}</b></span>}{plant && <span className="wild-plant item-sprite" style={itemSpriteStyle(plant.item)} title={`야생 ${ALL_ITEMS[plant.item].name} · 우클릭하여 채집`} />}{surveyedOres && <span className={`chunk-survey ${surveyedOres.length ? `survey-tier-${surveyedOres[0].tier}` : "survey-empty"}`}><b>{surveyedOres.length ? `T${surveyedOres[0].tier} 광맥` : "광맥 없음"}</b><small>{surveyedOres.length ? `${surveyedOres.length}개 탐지` : "0개"}</small></span>}</button>; })}
         {game.belts.map((belt) => <button key={tileKey(belt.x, belt.y)} data-tile-x={belt.x} data-tile-y={belt.y} type="button" className={`belt belt-direction-${belt.direction} ${beltShapeClass(belt, game.belts)} ${beltRemovePreviewKeys.has(tileKey(belt.x, belt.y)) ? "belt-remove-preview" : ""}`} style={tilePosition(belt.x, belt.y)} onContextMenu={(event) => handleContext(event, belt.x, belt.y)} aria-label={`${BELT_KIND_LABEL[beltKindOf(belt)]} 컨베이어 벨트 ${DIRECTIONS[belt.direction].arrow}`}><span data-arrow={DIRECTIONS[belt.direction].arrow} aria-hidden="true" />{belt.item && <i className="item-sprite belt-item-primary" style={itemSpriteStyle(belt.item)} title={ALL_ITEMS[belt.item].name} />}{belt.secondaryItem && <i className="item-sprite belt-item-secondary" style={itemSpriteStyle(belt.secondaryItem)} title={ALL_ITEMS[belt.secondaryItem].name} />}</button>)}
         {beltPreview.map((tile) => { const previewBelt: Belt = { ...tile, kind: beltKind }; return <div key={`preview-${tileKey(tile.x, tile.y)}`} className={`belt belt-preview belt-direction-${tile.direction} ${beltShapeClass(previewBelt, beltPreviewNetwork)}`} style={tilePosition(tile.x, tile.y)}><span data-arrow={DIRECTIONS[tile.direction].arrow} aria-hidden="true" /></div>; })}
-        {game.buildings.map((building) => { const definition = BUILDINGS[building.type]; const position = tilePosition(building.x, building.y); return <button key={building.id} data-tile-x={building.x} data-tile-y={building.y} type="button" className={`building building-${building.type} ${!building.active ? "offline" : ""} ${selectedId === building.id ? "selected" : ""}`} style={{ ...position, width: scale * definition.size, height: scale * definition.size }} onContextMenu={(event) => handleContext(event, building.x, building.y)} onClick={(event) => { if (event.timeStamp >= suppressClickUntilRef.current) setSelectedId(building.id); }}><BuildingPorts type={building.type} x={building.x} y={building.y} /><span className="building-glyph" style={buildingSpriteStyle(building.type)}>{definition.glyph}</span><strong>{definition.name}</strong><small>{!building.active ? "전력 부족" : building.type === "core" ? "ONLINE" : `${definition.power}⚡/2초`}</small></button>; })}
+        {game.buildings.map((building) => { const definition = BUILDINGS[building.type]; const position = tilePosition(building.x, building.y); return <button key={building.id} data-tile-x={building.x} data-tile-y={building.y} type="button" className={`building building-${building.type} ${!building.active ? "offline" : ""} ${selectedId === building.id ? "selected" : ""}`} style={{ ...position, width: scale * definition.size, height: scale * definition.size }} onContextMenu={(event) => handleContext(event, building.x, building.y)} onClick={(event) => { if (event.timeStamp >= suppressClickUntilRef.current) setSelectedId(building.id); }}><BuildingPorts type={building.type} x={building.x} y={building.y} rotation={building.rotation} /><span className="building-glyph" style={buildingSpriteStyle(building.type)}>{definition.glyph}</span><strong>{definition.name}</strong><small>{!building.active ? "전력 부족" : building.type === "core" ? "ONLINE" : `${definition.power}⚡/2초`}</small></button>; })}
         {previewTarget && previewType && <div className={`building building-preview ${previewValid ? "preview-valid" : "preview-invalid"}`} style={{ ...tilePosition(previewTarget.x, previewTarget.y), width: scale * BUILDINGS[previewType].size, height: scale * BUILDINGS[previewType].size }}><BuildingPorts type={previewType} /><span className="building-glyph" style={buildingSpriteStyle(previewType)}>{BUILDINGS[previewType].glyph}</span><strong>{BUILDINGS[previewType].name}</strong><small>{previewTarget.snapped ? "광맥 자동 정렬" : previewValid ? "설치 가능" : "설치 불가"}</small></div>}
         <div className="crosshair" aria-hidden="true" /><div className="coordinates">X {Math.floor(camera.x / TILE)} · Y {Math.floor(camera.y / TILE)} · {Math.round(zoom * 100)}%</div>
       </div>
@@ -690,14 +722,14 @@ export default function Home() {
         {RECIPES[selected.type].length > 0 && <label className="field-label">제작법<select value={selected.recipeId} onChange={(e) => changeRecipe(e.target.value)}>{RECIPES[selected.type].map((r) => <option value={r.id} key={r.id}>{r.name}</option>)}</select></label>}
         {selectedRecipe && <section className="selected-recipe"><small>현재 조합법</small><RecipeFormula recipe={selectedRecipe} /></section>}
         {selected.type === "outputter" && <label className="field-label">출력 아이템<select value={selected.selectedOutput ?? 103} onChange={(e) => updateBuilding({ selectedOutput: Number(e.target.value) as AnyItemId })}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}
-        {selected.type === "core" && <section className="core-output-settings"><h3>출력 포트별 아이템</h3>{["우측 상단", "우측 위", "우측 중앙", "우측 아래", "우측 하단", "하단 중앙"].map((label, index) => <label key={label}><span>{index + 1}. {label}</span><select value={selected.outputSelections?.[index] ?? 103} onChange={(event) => updateCoreOutput(index, Number(event.target.value) as AnyItemId)}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>)}</section>}
+        {selected.type === "core" && <section className="core-output-settings"><h3>출력 포트별 아이템 · 현재 {(selected.rotation ?? 0) * 90}°</h3>{Array.from({ length: 6 }, (_, index) => <label key={index}><span>출력 {index + 1}</span><select value={selected.outputSelections?.[index] ?? 103} onChange={(event) => updateCoreOutput(index, Number(event.target.value) as AnyItemId)}>{Object.values(ALL_ITEMS).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>)}</section>}
         {manualInputItem && <section className="manual-transfer"><h3>입력 보관함에 직접 넣기</h3><label><select value={manualInputItem} onChange={(event) => setManualTransferItem(Number(event.target.value) as AnyItemId)}>{manualInputChoices.map((item) => <option value={item} key={item}>{ALL_ITEMS[item].name} · 코어 {inventoryCount(game.core, item)}개</option>)}</select></label><div><Button size="sm" variant="outline" onClick={() => addManualInput(1)}>1개 넣기</Button><Button size="sm" variant="outline" onClick={() => addManualInput(10)}>10개 넣기</Button><Button size="sm" onClick={() => addManualInput(Infinity)}>가능한 만큼</Button></div></section>}
         <div className="inventory-grid">
           {inputSlotLimit(selected) > 0 && <InventoryList title={`입력 보관 · ${inputSlotLimit(selected) === Infinity ? "무제한" : `${inputSlotLimit(selected)}종`}`} inventory={selected.input} onReturn={selected.type === "core" ? undefined : (item, amount) => returnInventoryItem("input", item, amount)} />}
           <InventoryList title={selected.type === "miner" || selected.type === "advancedMiner" ? "채굴물 임시 보관 · 10초마다 자동 전송" : "출력 보관 · 직접 빼기"} inventory={selected.output} onReturn={selected.type === "core" ? undefined : (item, amount) => returnInventoryItem("output", item, amount)} />
         </div>
         {selected.type === "core" && <InventoryList title="코어 통합 보관함" inventory={game.core} />}
-        {selected.type !== "core" && <div className="inspector-actions"><Button variant="outline" onClick={beginMove}><Move /> 이동</Button><Button variant="destructive" onClick={removeBuilding}><Trash2 /> 철거</Button></div>}
+        <div className="inspector-actions"><Button variant="outline" onClick={rotateBuildingPorts}><RotateCw /> 입출력 회전</Button>{selected.type !== "core" && <Button variant="outline" onClick={beginMove}><Move /> 이동</Button>}{selected.type !== "core" && <Button variant="destructive" onClick={removeBuilding}><Trash2 /> 철거</Button>}</div>
       </aside>}
       {marketOpen && <aside className="panel market-panel"><PanelHead eyebrow="광구 거래소" title="판매 스테이지" close={() => setMarketOpen(false)} /><label className="field-label">판매 아이템<select value={saleItem} onChange={(e) => setSaleItem(Number(e.target.value) as AnyItemId)}>{SELLABLE_IDS.map((id) => <option value={id} key={id}>{ALL_ITEMS[id].name} · 보유 {inventoryCount(game.core, id)}개 · {ALL_ITEMS[id].sellPrice} G</option>)}</select></label><div className="stock-line"><span>현재 보유량</span><strong>{inventoryCount(game.core, saleItem).toLocaleString()}개</strong></div><label className="field-label">수량<div className="quantity-row"><Input min={1} step={1} type="number" value={saleQuantity} onChange={(e) => setSaleQuantity(e.target.value === "" ? "" : Number(e.target.value))} /><Button variant="outline" onClick={selectAllCurrent}>전량 선택</Button></div></label><div className="market-actions"><Button onClick={stageSale}>선택 수량 올리기</Button><Button variant="outline" onClick={stageAllSellable}>전체 재고 올리기</Button></div><div className="sale-stage">{game.stagedSales.length === 0 ? <p>판매할 아이템을 선택해 주세요.</p> : game.stagedSales.map((line, index) => <div key={`${line.item}-${index}`}><span>{ALL_ITEMS[line.item].name}</span><strong>{line.quantity}개</strong><em>{((ALL_ITEMS[line.item].sellPrice ?? 0) * line.quantity).toLocaleString()} G</em></div>)}</div><div className="sale-total"><span>예상 수익</span><strong>{totalStaged.toLocaleString()} G</strong></div><Button disabled={!game.stagedSales.length} onClick={confirmSale} className="w-full sell-button"><Coins /> 판매 확정</Button></aside>}
       {pendingBeltPlan && <aside className="belt-confirm" role="dialog" aria-modal="true" aria-label="벨트 설치 확인"><small>벨트 경로 확인</small><h2>{pendingBeltPlan.length}칸을 설치할까요?</h2><p>체크하면 미리 본 경로대로 설치하고, ×를 누르면 모두 취소합니다.</p><div><Button variant="outline" size="icon" aria-label="벨트 설치 취소" title="취소" onClick={cancelBeltPlan}><X /></Button><Button size="icon" aria-label="벨트 설치 확정" title="설치" onClick={confirmBeltPlan}><Check /></Button></div></aside>}
@@ -709,14 +741,18 @@ export default function Home() {
   </main>;
 }
 
-function BuildingPorts({ type, x, y }: { type: BuildingType; x?: number; y?: number }) {
+function BuildingPorts({ type, x, y, rotation = 0 }: { type: BuildingType; x?: number; y?: number; rotation?: BuildingRotation }) {
+  const size = BUILDINGS[type].size;
   const inputCount = type === "core" ? BUILDINGS[type].inputPorts - 1 : BUILDINGS[type].inputPorts;
   const outputCount = type === "core" ? BUILDINGS[type].outputPorts - 1 : BUILDINGS[type].outputPorts;
+  const portPoint = (localX: number, localY: number) => { const point = rotateLocalPoint(size, rotation, localX, localY); return { x: x === undefined ? undefined : x + point.x, y: y === undefined ? undefined : y + point.y }; };
+  const inputDirection = rotateDirection("right", rotation); const coreInputDirection = rotateDirection("down", rotation);
+  const outputDirection = rotateDirection("right", rotation); const coreOutputDirection = rotateDirection("down", rotation);
   if (inputCount === 0 && outputCount === 0) return null;
-  return <span className="ports" aria-hidden="true">
-    {Array.from({ length: inputCount }, (_, index) => <i key={`in-${index}`} className="port port-input" data-belt-port-x={x === undefined ? undefined : x - 1} data-belt-port-y={y === undefined ? undefined : y + index} data-belt-port-reverse="true" data-belt-port-direction="right" style={{ top: `${((index + .5) / inputCount) * 100}%` }} />)}
-    {Array.from({ length: outputCount }, (_, index) => <i key={`out-${index}`} className="port port-output" data-belt-port-x={x === undefined ? undefined : x + BUILDINGS[type].size} data-belt-port-y={y === undefined ? undefined : y + index} data-belt-port-reverse="false" data-belt-port-direction="right" style={{ top: `${((index + .5) / outputCount) * 100}%` }} />)}
-    {type === "core" && <><i className="port port-input port-top" data-belt-port-x={x === undefined ? undefined : x + 2} data-belt-port-y={y === undefined ? undefined : y - 1} data-belt-port-reverse="true" data-belt-port-direction="down" /><i className="port port-output port-bottom" data-belt-port-x={x === undefined ? undefined : x + 2} data-belt-port-y={y === undefined ? undefined : y + BUILDINGS[type].size} data-belt-port-reverse="false" data-belt-port-direction="down" /></>}
+  return <span className="ports" aria-hidden="true" style={{ transform: `rotate(${rotation * 90}deg)` }}>
+    {Array.from({ length: inputCount }, (_, index) => { const point = portPoint(-1, index); return <i key={`in-${index}`} className="port port-input" data-belt-port-x={point.x} data-belt-port-y={point.y} data-belt-port-reverse="true" data-belt-port-direction={inputDirection} style={{ top: `${((index + .5) / inputCount) * 100}%` }} />; })}
+    {Array.from({ length: outputCount }, (_, index) => { const point = portPoint(size, index); return <i key={`out-${index}`} className="port port-output" data-belt-port-x={point.x} data-belt-port-y={point.y} data-belt-port-reverse="false" data-belt-port-direction={outputDirection} style={{ top: `${((index + .5) / outputCount) * 100}%` }} />; })}
+    {type === "core" && (() => { const input = portPoint(2, -1); const output = portPoint(2, size); return <><i className="port port-input port-top" data-belt-port-x={input.x} data-belt-port-y={input.y} data-belt-port-reverse="true" data-belt-port-direction={coreInputDirection} /><i className="port port-output port-bottom" data-belt-port-x={output.x} data-belt-port-y={output.y} data-belt-port-reverse="false" data-belt-port-direction={coreOutputDirection} /></>; })()}
   </span>;
 }
 function PanelHead({ eyebrow, title, close }: { eyebrow: string; title: string; close: () => void }) { return <div className="panel-head"><span><small>{eyebrow}</small><h2>{title}</h2></span><Button size="icon-sm" variant="ghost" onClick={close} aria-label="닫기"><X /></Button></div>; }

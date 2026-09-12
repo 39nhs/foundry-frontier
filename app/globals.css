@@ -249,7 +249,7 @@ kbd { display: inline-grid; place-items: center; min-width: 20px; min-height: 20
 .return-actions button { height: 25px; padding: 0 4px; color: #9edbd6; border: 1px solid #30494a; font-size: 10px; }
 .inventory-list i.item-sprite { width: 24px; height: 24px; filter: drop-shadow(0 2px 3px #000b); }
 .inventory-list [data-slot="progress"] { grid-column: 1 / -1; height: 3px; }
-.inspector-actions { display: flex; gap: 8px; margin-top: 18px; }
+.inspector-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .inspector-actions button { flex: 1; }
 .sale-stage { min-height: 118px; max-height: 210px; overflow: auto; margin-top: 14px; padding: 10px; background: #090d0e; border: 1px dashed #455457; }
 .sale-stage p { color: #687577; text-align: center; font-size: 12px; margin-top: 38px; }
